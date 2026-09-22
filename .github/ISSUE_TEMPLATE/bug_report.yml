@@ -1,0 +1,91 @@
+name: 🐛 Bug Report
+description: Report a bug or unexpected behavior in Forger
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug!
+        バグ報告は日本語でも英語でもOKです。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of what the bug is.
+      placeholder: When I click X, Y happens instead of Z...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we reproduce the issue?
+      placeholder: |
+        1. Open a project
+        2. Click on ...
+        3. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: false
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Forger version
+      description: Release version or build source
+      placeholder: e.g. v0.1.0, or "built from source"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: llm
+    attributes:
+      label: LLM provider (if relevant)
+      options:
+        - Gemini API
+        - Ollama
+        - LiteLLM proxy
+        - Not related to AI features
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        If the app crashed or failed to start, paste the contents of `%TEMP%/forger-crash.log` (packaged builds only).
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag & drop images here if they help explain the issue.
+    validations:
+      required: false
