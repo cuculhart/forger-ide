@@ -1,0 +1,69 @@
+import { configService, ThemeMode } from './configService'
+
+export type ResolvedTheme = 'dark' | 'light'
+
+const darkMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+
+class ThemeService {
+  private mode: ThemeMode
+
+  constructor() {
+    this.mode = configService.getTheme()
+  }
+
+  init(): void {
+    this.apply()
+    this.applyFont()
+    darkMediaQuery.addEventListener('change', this.handleSystemChange)
+  }
+
+  private handleSystemChange = () => {
+    if (this.mode === 'system') {
+      this.apply()
+    }
+  }
+
+  getMode(): ThemeMode {
+    return this.mode
+  }
+
+  getResolvedTheme(): ResolvedTheme {
+    if (this.mode === 'system') {
+      return darkMediaQuery.matches ? 'dark' : 'light'
+    }
+    return this.mode
+  }
+
+  setMode(mode: ThemeMode): void {
+    this.mode = mode
+    configService.setTheme(mode)
+    this.apply()
+  }
+
+  private apply(): void {
+    const resolved = this.getResolvedTheme()
+    document.documentElement.setAttribute('data-theme', resolved)
+    window.electronAPI?.setThemeSource?.(this.mode)
+    window.dispatchEvent(new CustomEvent<ResolvedTheme>('theme-changed', { detail: resolved }))
+  }
+
+  applyFont(): void {
+    const root = document.documentElement
+    const family = configService.getUIFontFamily()
+    const size = configService.getUIFontSize()
+
+    if (family) {
+      root.style.setProperty('--ui-font-family', family)
+    } else {
+      root.style.removeProperty('--ui-font-family')
+    }
+    if (size) {
+      root.style.setProperty('--ui-font-size', `${size}px`)
+    } else {
+      root.style.removeProperty('--ui-font-size')
+    }
+    window.dispatchEvent(new CustomEvent('font-changed'))
+  }
+}
+
+export const themeService = new ThemeService()

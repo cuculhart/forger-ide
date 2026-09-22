@@ -1,0 +1,397 @@
+.explorer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+}
+
+.explorer-header {
+  padding: 10px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.project-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.project-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.explorer-header h3 {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  margin: 0;
+  flex: 1;
+}
+
+.open-project-button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.open-project-button:hover {
+  background: var(--bg-active);
+}
+
+.new-item-button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.new-item-button:hover {
+  background: var(--bg-active);
+}
+
+.dir-actions {
+  margin-left: auto;
+  display: none;
+  gap: 2px;
+}
+
+.explorer-item:hover .dir-actions {
+  display: inline-flex;
+}
+
+.dir-actions button {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+.dir-actions button:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.new-item-input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--accent);
+  color: var(--text-primary);
+  font-size: 13px;
+  padding: 1px 4px;
+  outline: none;
+  border-radius: 2px;
+}
+
+.dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.dialog-input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.parent-folder-button {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-tertiary);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+  margin-bottom: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.parent-folder-button:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.new-project-empty-button {
+  margin-left: 8px;
+  background: var(--bg-active) !important;
+  color: var(--text-primary) !important;
+}
+
+.dialog-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.close-project-button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.close-project-button:hover {
+  background: var(--bg-active);
+  color: var(--error-hover);
+}
+
+.context-mode-button {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.context-mode-button:hover {
+  background: var(--bg-active);
+}
+
+.context-mode-button.active {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.context-stats {
+  display: flex;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border-top: 1px solid var(--border-color);
+}
+
+.stat-item {
+  font-size: 10px;
+  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.project-dialog {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.project-dialog-content {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  width: 300px;
+}
+
+.project-dialog-content h4 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.project-dialog-content p {
+  margin: 0 0 15px 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.project-dialog-content .dialog-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 15px !important;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.dialog-actions button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dialog-actions button:last-child {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.explorer-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-muted);
+}
+
+.explorer-empty p {
+  margin: 0 0 10px 0;
+  font-size: 13px;
+}
+
+.explorer-empty button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.recent-projects {
+  margin-top: 16px;
+  text-align: left;
+}
+
+.recent-projects-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  margin: 0 0 6px 0;
+}
+
+.recent-project-item {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+  transition: background 0.1s;
+}
+
+.recent-project-item:hover {
+  background: var(--bg-hover);
+}
+
+.recent-project-name {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.recent-project-path {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.open-error {
+  color: var(--error);
+  font-size: 11px;
+  margin-top: 8px;
+  word-break: break-all;
+}
+
+.explorer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 5px 0;
+}
+
+.explorer-item {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-secondary);
+  transition: background 0.1s;
+}
+
+.explorer-item:hover {
+  background: var(--bg-hover);
+}
+
+.explorer-item.directory {
+  font-weight: 500;
+}
+
+.explorer-item.selected {
+  background: var(--selected-bg);
+}
+
+.explorer-item.selected .explorer-name {
+  color: white;
+}
+
+.select-file-button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: auto;
+  transition: background 0.2s;
+}
+
+.select-file-button:hover {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.explorer-item.selected .select-file-button {
+  color: var(--accent);
+}
+
+.explorer-icon {
+  margin-right: 6px;
+  font-size: 14px;
+}
+
+.explorer-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

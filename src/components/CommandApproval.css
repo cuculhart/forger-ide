@@ -1,0 +1,10 @@
+.command-text {
+  font-family: 'Consolas', 'Courier New', monospace;
+}
+
+.command-warning {
+  padding: 0 20px 10px;
+  font-size: 12px;
+  color: var(--error);
+  margin: 0;
+}

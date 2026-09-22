@@ -1,0 +1,306 @@
+.settings-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--overlay-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.settings-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  width: 500px;
+  max-width: 90vw;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 20px var(--shadow);
+}
+
+.settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.close-button {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background 0.2s;
+}
+
+.close-button:hover {
+  background: var(--bg-active);
+}
+
+.settings-content {
+  padding: 20px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.setting-section {
+  margin-bottom: 20px;
+}
+
+.setting-section h3 {
+  margin: 0 0 10px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.setting-description {
+  margin: 0 0 15px 0;
+  font-size: 13px;
+  color: var(--text-tertiary);
+  line-height: 1.5;
+}
+
+.setting-description a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.setting-description a:hover {
+  text-decoration: underline;
+}
+
+.model-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.model-dropdown {
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  cursor: pointer;
+}
+
+.model-dropdown:focus {
+  border-color: var(--accent);
+}
+
+.model-dropdown option {
+  background: var(--bg-active);
+  color: var(--text-primary);
+}
+
+.custom-model-input {
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.custom-model-input:focus {
+  border-color: var(--accent);
+}
+
+.custom-model-input::placeholder {
+  color: var(--text-muted);
+}
+
+.proxy-toggle {
+  margin-bottom: 15px;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.proxy-input {
+  margin-top: 10px;
+}
+
+.proxy-url-field {
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.proxy-url-field:focus {
+  border-color: var(--accent);
+}
+
+.api-key-input {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.api-key-field {
+  flex: 1;
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+}
+
+.api-key-field:focus {
+  border-color: var(--accent);
+}
+
+.api-key-field::placeholder {
+  color: var(--text-muted);
+}
+
+.toggle-visibility {
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: background 0.2s;
+}
+
+.toggle-visibility:hover {
+  background: var(--bg-hover-strong);
+}
+
+.appearance-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.appearance-row label {
+  width: 90px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.appearance-row .model-dropdown,
+.appearance-row .proxy-url-field {
+  flex: 1;
+}
+
+.font-size-field {
+  background: var(--bg-active);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: inherit;
+  outline: none;
+  width: 80px;
+}
+
+.font-size-field:focus {
+  border-color: var(--accent);
+}
+
+.appearance-unit {
+  font-size: 13px;
+  color: var(--text-tertiary);
+}
+
+.setting-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.save-button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.save-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.save-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.clear-button {
+  background: var(--bg-active);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.clear-button:hover:not(:disabled) {
+  background: var(--bg-hover-strong);
+}
+
+.clear-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

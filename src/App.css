@@ -1,0 +1,136 @@
+.app {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.sidebar {
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 8px;
+  background: transparent;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.sidebar-tab:hover {
+  color: var(--text-primary);
+}
+
+.sidebar-tab.active {
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.sidebar-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-body.hidden {
+  display: none;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  min-width: 0;
+}
+
+.editor-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-panel {
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.splitter {
+  flex-shrink: 0;
+  position: relative;
+  z-index: 20;
+  background: var(--border-color);
+  transition: background 0.1s;
+}
+
+.splitter:hover,
+.splitter:active {
+  background: var(--accent);
+}
+
+.splitter-vertical {
+  width: 5px;
+  cursor: col-resize;
+  margin: 0 -2px;
+}
+
+.splitter-horizontal {
+  height: 5px;
+  cursor: row-resize;
+  margin: -2px 0;
+}
+
+/* While dragging, keep the resize cursor over the whole window and
+   prevent text selection / pointer interference from panels below */
+body.resizing-col,
+body.resizing-row {
+  user-select: none;
+}
+
+body.resizing-col {
+  cursor: col-resize !important;
+}
+
+body.resizing-row {
+  cursor: row-resize !important;
+}
+
+body.resizing-col *,
+body.resizing-row * {
+  pointer-events: none;
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 12px;
+  padding: 8px 16px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 2000;
+  max-width: 70vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1,0 +1,273 @@
+const path = require('path')
+const fsSync = require('fs')
+const { setupIpcHandlers } = require('./ipcHandlers')
+
+let mainWindow = null
+
+// Folder path passed via CLI arg (e.g. dropping a folder on Forger.exe).
+// Packaged: argv[1..] are user args; dev: argv[0]=electron, argv[1]=app dir.
+function extractArgFolder(argv) {
+  const { app } = require('electron')
+  const args = app.isPackaged ? argv.slice(1) : argv.slice(2)
+  for (const arg of args) {
+    try {
+      if (!arg.startsWith('-') && fsSync.statSync(arg).isDirectory()) {
+        return path.resolve(arg)
+      }
+    } catch (e) {
+      // not a readable path - skip
+    }
+  }
+  return null
+}
+
+let pendingFolderArg = extractArgFolder(process.argv)
+
+function sendFolderArg() {
+  if (pendingFolderArg && mainWindow) {
+    mainWindow.webContents.send('open-project-path', pendingFolderArg)
+    pendingFolderArg = null
+  }
+}
+
+function sendMenuAction(action) {
+  if (mainWindow) {
+    mainWindow.webContents.send('menu-action', action)
+  }
+}
+
+function buildMenu() {
+  const { Menu, dialog } = require('electron')
+
+  const template = [
+    // macOS application menu
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Project...',
+          accelerator: 'CmdOrCtrl+O',
+          click: () => sendMenuAction('open-project'),
+        },
+        {
+          label: 'New Project...',
+          accelerator: 'CmdOrCtrl+Shift+N',
+          click: () => sendMenuAction('new-project'),
+        },
+        { type: 'separator' },
+        {
+          label: 'New File',
+          accelerator: 'CmdOrCtrl+N',
+          click: () => sendMenuAction('new-file'),
+        },
+        {
+          label: 'New Folder',
+          accelerator: 'CmdOrCtrl+Shift+F',
+          click: () => sendMenuAction('new-folder'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Quick Open...',
+          accelerator: 'CmdOrCtrl+P',
+          click: () => sendMenuAction('quick-open'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Save',
+          accelerator: 'CmdOrCtrl+S',
+          click: () => sendMenuAction('save-file'),
+        },
+        {
+          label: 'Export Markdown to PDF...',
+          click: () => sendMenuAction('export-pdf'),
+        },
+        {
+          label: 'Export Markdown to HTML...',
+          click: () => sendMenuAction('export-html'),
+        },
+        { type: 'separator' },
+        {
+          label: 'Close Project',
+          click: () => sendMenuAction('close-project'),
+        },
+        { type: 'separator' },
+        { role: 'quit', label: 'Exit' },
+      ],
+    },
+    {
+      label: 'Edit',
+      submenu: [
+        {
+          label: 'Undo',
+          accelerator: 'CmdOrCtrl+Z',
+          click: () => sendMenuAction('undo'),
+        },
+        {
+          label: 'Redo',
+          accelerator: 'CmdOrCtrl+Shift+Z',
+          click: () => sendMenuAction('redo'),
+        },
+        { type: 'separator' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'selectAll' },
+      ],
+    },
+    {
+      label: 'View',
+      submenu: [
+        { role: 'reload' },
+        { role: 'forceReload' },
+        { role: 'toggleDevTools' },
+        { type: 'separator' },
+        { role: 'resetZoom' },
+        { role: 'zoomIn' },
+        { role: 'zoomOut' },
+        { type: 'separator' },
+        {
+          label: 'Toggle Terminal',
+          accelerator: 'CmdOrCtrl+`',
+          click: () => sendMenuAction('toggle-terminal'),
+        },
+        { type: 'separator' },
+        { role: 'togglefullscreen' },
+      ],
+    },
+    {
+      label: 'Window',
+      submenu: [
+        { role: 'minimize' },
+        { role: 'close' },
+      ],
+    },
+    {
+      label: 'Help',
+      submenu: [
+        {
+          label: 'About Forger',
+          click: () => sendMenuAction('about'),
+        },
+      ],
+    },
+  ]
+
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
+async function createWindow() {
+  const { BrowserWindow } = require('electron')
+
+  mainWindow = new BrowserWindow({
+    title: 'Forger',
+    width: 1400,
+    height: 900,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+
+  if (app.isPackaged) {
+    // Packaged build: load the bundled renderer produced by `vite build`
+    await mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+  } else {
+    // In development, load from Vite dev server (try common ports)
+    const ports = [5173, 5174, 5175, 5176, 5177, 5178, 5179, 5180, 5181, 5182, 5183, 5184, 5185, 5186, 5187, 5188, 5189, 5190]
+    let loaded = false
+    for (const port of ports) {
+      try {
+        await mainWindow.loadURL(`http://localhost:${port}`)
+        loaded = true
+        console.log(`Loaded from port ${port}`)
+        break
+      } catch (e) {
+        // Try next port
+      }
+    }
+
+    if (!loaded) {
+      console.error('Failed to load Vite dev server on any port')
+    }
+  }
+
+  // Deliver the CLI folder arg (folder dropped on the exe) once loaded
+  mainWindow.webContents.on('did-finish-load', sendFolderArg)
+
+  mainWindow.on('closed', () => {
+    mainWindow = null
+  })
+}
+
+const { app } = require('electron')
+
+// In packaged builds a main-process crash exits silently (no console).
+// Log to a file and show a dialog so failures are diagnosable.
+function reportFatalError(err) {
+  const message = err && err.stack ? err.stack : String(err)
+  try {
+    const fs = require('fs')
+    const os = require('os')
+    fs.appendFileSync(
+      path.join(os.tmpdir(), 'forger-crash.log'),
+      `${new Date().toISOString()}\n${message}\n\n`,
+    )
+  } catch (e) {
+    // ignore logging failure
+  }
+  try {
+    require('electron').dialog.showErrorBox('Forger failed to start', message)
+  } catch (e) {
+    // ignore dialog failure
+  }
+  app.exit(1)
+}
+
+process.on('uncaughtException', reportFatalError)
+process.on('unhandledRejection', (reason) => reportFatalError(reason))
+
+// Reuse the running instance when a folder is dropped on the exe again
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', (event, argv) => {
+    const folder = extractArgFolder(argv)
+    if (folder) pendingFolderArg = folder
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.focus()
+      sendFolderArg()
+    }
+  })
+}
+
+app.whenReady().then(async () => {
+  const { ipcMain } = require('electron')
+  // Renderer pulls the pending CLI folder arg on mount (did-finish-load
+  // can fire before React listeners are registered)
+  ipcMain.handle('forger:take-pending-folder', () => {
+    const p = pendingFolderArg
+    pendingFolderArg = null
+    return p
+  })
+
+  setupIpcHandlers()
+  buildMenu()
+  await createWindow()
+
+  app.on('activate', async () => {
+    const { BrowserWindow } = require('electron')
+    if (BrowserWindow.getAllWindows().length === 0) {
+      await createWindow()
+    }
+  })
+}).catch(reportFatalError)
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') {
+    app.quit()
+  }
+})

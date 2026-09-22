@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content Security Policy.
+      NOTE: 'unsafe-inline' (script/style) and ws://localhost:* are needed for
+      the Vite dev server (react-refresh preamble, HMR websocket).
+      cdn.jsdelivr.net is required because @monaco-editor/react loads Monaco
+      from the CDN. connect-src allows any https: endpoint because the LiteLLM
+      proxy URL is user-configured. When Monaco is bundled locally and the app
+      is packaged, tighten script-src to 'self' and remove 'unsafe-inline'.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' data: https://cdn.jsdelivr.net; img-src 'self' data:; connect-src 'self' ws://localhost:* http://localhost:* https:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'"
+    />
+    <title>Forger</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
