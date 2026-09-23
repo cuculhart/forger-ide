@@ -63,6 +63,7 @@ RULES for RUN_COMMAND:
 - Commands run in the project root directory and always require user approval before execution.
 - Prefer safe, read-only or build/test commands (npm test, npm run build, dir, git status).
 - Long-running servers (npm start, docker compose up) will time out but keep running; check their early output instead of waiting for exit.
+- To open a file or URL in the user's default web browser, run the Windows "start" command, e.g. // RUN_COMMAND: start index.html or // RUN_COMMAND: start http://localhost:3000
 - Destructive commands (deleting files, modifying system state) may be rejected by the user.`
 
 export const AGENT_SYSTEM_PROMPT = APP_CONTEXT_PROMPT + AGENT_INSTRUCTIONS
