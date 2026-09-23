@@ -22,6 +22,7 @@ export interface ElectronAPI {
   onTerminalOutput: (callback: (payload: { id: string; data: string; stream: 'stdout' | 'stderr' }) => void) => () => void
   onTerminalExit: (callback: (payload: { id: string; code: number | null }) => void) => () => void
   openExternal: (url: string) => Promise<{ success: boolean; error?: string }>
+  openPath: (rootPath: string, target: string) => Promise<{ success: boolean; error?: string }>
   exportPdf: (html: string, suggestedName?: string) => Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
   exportHtml: (html: string, suggestedName?: string) => Promise<{ success: boolean; filePath?: string; canceled?: boolean; error?: string }>
   editUndo: () => Promise<{ success: boolean }>

@@ -12,7 +12,25 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  // Round-trip time of the LLM call that produced this message (ms)
+  latencyMs?: number
+  // Model that produced this response (e.g. "ollama:qwen3.5:4b")
+  model?: string
+  // The model's raw output, before command blocks were replaced with
+  // readable notes. Sent back as history so the model never sees the
+  // "Ran: ..." note format (small models imitate it and emit fake notes).
+  rawContent?: string
 }
+
+const formatLatency = (ms: number) => (ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`)
+
+// Drop execution-note lines (▶️ Ran:, ⚠️ ..., 📖 ..., etc.) from display text.
+// Used when sending legacy assistant messages back as model history.
+const stripNoteLines = (text: string) =>
+  text
+    .split('\n')
+    .filter((l) => !/^\s*(▶️|⚠️|📖|🔍|⏭️|↩️|✅)/u.test(l))
+    .join('\n')
 
 interface ChatProps {
   onOpenSettings: () => void
@@ -51,6 +69,14 @@ interface FileCommand {
   body?: string
   start: number
   end: number
+}
+
+interface RunResult {
+  output: string
+  exitCode: number | null
+  timedOut: boolean
+  // The command was an "open in browser" handled via the OS shell, not the PTY
+  opened?: boolean
 }
 
 interface CommandExecutionResult {
@@ -167,7 +193,7 @@ async function parseAndExecuteFileCommands(
   response: string,
   requestApproval: (edits: FileEdit[]) => Promise<FileEdit[] | null>,
   requestCommandApproval: (commands: string[]) => Promise<string[] | null>,
-  runCommandAndWait: (command: string) => Promise<{ output: string; exitCode: number | null; timedOut: boolean }>
+  runCommandAndWait: (command: string) => Promise<RunResult>
 ): Promise<CommandExecutionResult> {
   const commands = findFileCommands(response)
   if (commands.length === 0) {
@@ -400,9 +426,11 @@ async function parseAndExecuteFileCommands(
       try {
         const result = await runCommandAndWait(r.command)
         const tail = stripAnsi(result.output).slice(-8000) // errors usually appear at the end
-        const statusText = result.timedOut
-          ? i18nService.t('still running after timeout (visible in the Terminal panel; the user can type stdin input there if the program is interactive)')
-          : `${i18nService.t('exit code')} ${result.exitCode}`
+        const statusText = result.opened
+          ? i18nService.t('opened')
+          : result.timedOut
+            ? i18nService.t('still running after timeout (visible in the Terminal panel; the user can type stdin input there if the program is interactive)')
+            : `${i18nService.t('exit code')} ${result.exitCode}`
         notes[r.index] = `▶️ ${i18nService.t('Ran')}: ${r.command} (${statusText})`
         feedback.push(
           `RUN_COMMAND ${r.command} result - ${statusText}:\n${tail || '(no output)'}`
@@ -447,12 +475,17 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [isConfigured, setIsConfigured] = useState(false)
   const [currentModel, setCurrentModel] = useState<string>('')
+  // Model pinned to the in-flight request (shown while generating)
+  const [activeModel, setActiveModel] = useState<string>('')
   const [abortController, setAbortController] = useState<AbortController | null>(null)
   const [pendingEdits, setPendingEdits] = useState<FileEdit[] | null>(null)
   const approvalResolverRef = useRef<((edits: FileEdit[] | null) => void) | null>(null)
   const [pendingCommands, setPendingCommands] = useState<string[] | null>(null)
   const commandResolverRef = useRef<((commands: string[] | null) => void) | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  // Live streaming bubble (separate from the committed message list)
+  const [streamingText, setStreamingText] = useState<string | null>(null)
+  const streamedRef = useRef('')
   // Stack of pre-write snapshots - each entry rolls back one AI write batch
   const checkpointsRef = useRef<{ path: string; prevContent: string; existed: boolean }[][]>([])
   const [canRollback, setCanRollback] = useState(false)
@@ -535,12 +568,39 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   // Long-running commands (npm start, docker) resolve with timedOut=true
   // and keep running - the user can watch/stop them in the Terminal panel.
   const RUN_COMMAND_TIMEOUT_MS = 60_000
-  const runCommandAndWait = (command: string): Promise<{ output: string; exitCode: number | null; timedOut: boolean }> => {
-    return new Promise(async (resolve, reject) => {
+  const runCommandAndWait = (command: string): Promise<RunResult> => {
+    return new Promise<RunResult>(async (resolve, reject) => {
       const project = projectService.getCurrentProject()
       if (!project?.isOpen || !window.electronAPI) {
         reject(new Error(i18nService.t('No project is open')))
         return
+      }
+
+      // `start` inside a transient ConPTY cmd can exit before the launched
+      // app appears. Open documents/URLs through the OS shell instead.
+      const startMatch = command.match(/^\s*(?:cmd(?:\.exe)?\s+\/c\s+)?start\s+(.*)$/i)
+      if (startMatch) {
+        const target = startMatch[1].trim().replace(/^""\s*/, '').replace(/^"|"$/g, '')
+        if (target) {
+          const isUrl = /^https?:\/\//i.test(target)
+          if ((isUrl && !window.electronAPI.openExternal) || (!isUrl && !window.electronAPI.openPath)) {
+            reject(new Error(i18nService.t('Cannot open target - restart Forger to pick up the update')))
+            return
+          }
+          try {
+            const res = isUrl
+              ? await window.electronAPI.openExternal(target)
+              : await window.electronAPI.openPath(project.rootPath, target)
+            if (res.success) {
+              resolve({ output: '', exitCode: 0, timedOut: false, opened: true })
+            } else {
+              reject(new Error(res.error || i18nService.t('Failed to open')))
+            }
+          } catch (e) {
+            reject(e)
+          }
+          return
+        }
       }
 
       const result = await window.electronAPI.runCommand(project.rootPath, command)
@@ -652,6 +712,19 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   const sendToAI = async (userMessage: Message, historyBase: Message[]) => {
     setIsLoading(true)
 
+    // Pin provider+model for this whole run: changing Settings while a
+    // response is generating must not retarget later agent-loop steps or
+    // relabel the in-flight reply.
+    const runProvider = configService.getLlmProvider()
+    const runModelName = runProvider === 'ollama'
+      ? configService.getOllamaModel()
+      : configService.getGeminiModel() === 'custom'
+        ? configService.getGeminiCustomModel()
+        : configService.getGeminiModel()
+    const runLabel = currentModel
+    const llmPin = { provider: runProvider, model: runModelName || undefined }
+    setActiveModel(runLabel)
+
     // Create abort controller for this request
     const controller = new AbortController()
     setAbortController(controller)
@@ -679,26 +752,56 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
       // feed the results back to the model, and repeat until the model
       // responds without commands or we hit the step limit.
       const MAX_STEPS = 6
-      const historyForRequest: Message[] = [...historyBase, userMessage]
+      // Feed raw model output as history - display notes like "Ran: ..."
+      // are UI decoration, and small models imitate them as fake output.
+      // Legacy messages saved before rawContent existed get their note
+      // lines stripped instead.
+      const historyForRequest: Message[] = [
+        ...historyBase.map((m) => ({
+          ...m,
+          content: m.rawContent ?? (m.role === 'assistant' ? stripNoteLines(m.content) : m.content),
+        })),
+        userMessage,
+      ]
       let currentInput = userMessage.content
       let lastStepRanCommands = false
+
+      // Streaming (Ollama path): deltas accumulate into a live bubble
+      // rendered below the message list. On completion the parsed display
+      // becomes a normal committed message.
+      const makeStreamHandler = () => {
+        streamedRef.current = ''
+        const onDelta = (delta: string) => {
+          streamedRef.current += delta
+          setStreamingText(streamedRef.current)
+        }
+        return { onDelta, getStreamed: () => streamedRef.current }
+      }
 
       for (let step = 0; step < MAX_STEPS; step++) {
         if (controller.signal.aborted) break
 
-        const response = await llmService.sendMessage(currentInput, context, historyForRequest)
+        const { onDelta, getStreamed } = makeStreamHandler()
+        const callStart = performance.now()
+        const response = await llmService.sendMessage(currentInput, context, historyForRequest, onDelta, controller.signal, llmPin)
+        const latencyMs = Math.round(performance.now() - callStart)
         const { display, feedback, needsContinuation, checkpoint } = await parseAndExecuteFileCommands(response, requestApproval, requestCommandApproval, runCommandAndWait)
+        setStreamingText(null)
         if (checkpoint && checkpoint.length > 0) {
           checkpointsRef.current.push(checkpoint)
           setCanRollback(true)
         }
         lastStepRanCommands = feedback.length > 0
 
-        if (display) {
+        const finalText = display || getStreamed()
+        if (finalText) {
           const assistantMessage: Message = {
             role: 'assistant',
-            content: display,
+            content: finalText,
             timestamp: Date.now(),
+            latencyMs,
+            model: runLabel || undefined,
+            rawContent: response,
           }
           setMessages((prev) => [...prev, assistantMessage])
         }
@@ -723,28 +826,49 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
           `of what you did, in the same language as the user's request. ` +
           `Do not emit any file commands.`
         historyForRequest.push({ role: 'user', content: summaryInput, timestamp: Date.now() })
-        const summary = await llmService.sendMessage(summaryInput, context, historyForRequest)
+        const { onDelta: onSummaryDelta, getStreamed: getSummaryStreamed } = makeStreamHandler()
+        const summaryStart = performance.now()
+        const summary = await llmService.sendMessage(summaryInput, context, historyForRequest, onSummaryDelta, controller.signal, llmPin)
+        const summaryLatencyMs = Math.round(performance.now() - summaryStart)
         const { display: summaryDisplay } = await parseAndExecuteFileCommands(summary, requestApproval, requestCommandApproval, runCommandAndWait)
-        if (summaryDisplay) {
+        setStreamingText(null)
+        const summaryText = summaryDisplay || getSummaryStreamed()
+        if (summaryText) {
           setMessages((prev) => [...prev, {
             role: 'assistant',
-            content: summaryDisplay,
+            content: summaryText,
             timestamp: Date.now(),
+            latencyMs: summaryLatencyMs,
+            model: runLabel || undefined,
+            rawContent: summary,
           }])
         }
       }
       
     } catch (error) {
       console.error('Error sending message:', error)
-      const errorMessage: Message = {
-        role: 'assistant',
-        content: `${i18nService.t('Error')}: ${error instanceof Error ? error.message : i18nService.t('Failed to get response')}`,
-        timestamp: Date.now(),
+      // User-cancelled: keep whatever was streamed so far, no error message
+      if (!controller.signal.aborted) {
+        const errorMessage: Message = {
+          role: 'assistant',
+          content: `${i18nService.t('Error')}: ${error instanceof Error ? error.message : i18nService.t('Failed to get response')}`,
+          timestamp: Date.now(),
+        }
+        setMessages((prev) => [...prev, errorMessage])
+      } else if (streamedRef.current) {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: streamedRef.current,
+          timestamp: Date.now(),
+          model: runLabel || undefined,
+        }])
       }
-      setMessages((prev) => [...prev, errorMessage])
+      setStreamingText(null)
+      streamedRef.current = ''
     } finally {
       setIsLoading(false)
       setAbortController(null)
+      setActiveModel('')
     }
   }
 
@@ -809,6 +933,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
             <div className="message-content">
               <div className="message-role">
                 {message.role}
+                {message.role === 'assistant' && message.model && ` (${message.model})`}
                 {message.role === 'assistant' && index === messages.length - 1 && !isLoading && (
                   <button
                     className="retry-button"
@@ -820,13 +945,24 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
                 )}
               </div>
               <div className="message-text">{message.content}</div>
+              {message.latencyMs != null && (
+                <div className="message-latency">({formatLatency(message.latencyMs)})</div>
+              )}
             </div>
           </div>
         ))}
+        {streamingText && (
+          <div className="chat-message assistant">
+            <div className="message-content">
+              <div className="message-role">assistant{(activeModel || currentModel) && ` (${activeModel || currentModel})`}</div>
+              <div className="message-text">{streamingText}</div>
+            </div>
+          </div>
+        )}
         {isLoading && (
           <div className="chat-message assistant">
             <div className="message-content">
-              <div className="message-role">assistant</div>
+              <div className="message-role">assistant{(activeModel || currentModel) && ` (${activeModel || currentModel})`}</div>
               <div className="message-text loading">
                 <span className="loading-dots">{t('Generating response')}</span>
                 <button 

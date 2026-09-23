@@ -13,7 +13,8 @@ export class GeminiService {
     this.initialize()
   }
 
-  private getModelName(): string {
+  private getModelName(override?: string): string {
+    if (override) return override
     const model = configService.getGeminiModel()
     if (model === 'custom') {
       const customModel = configService.getGeminiCustomModel()
@@ -22,7 +23,7 @@ export class GeminiService {
     return model || this.defaultModel
   }
 
-  private initialize() {
+  private initialize(modelOverride?: string) {
     const apiKey = configService.getGeminiApiKey()
     const proxyUrl = configService.getLlmProxyUrl()
     
@@ -38,7 +39,7 @@ export class GeminiService {
           }
         : undefined
 
-      const modelName = this.getModelName()
+      const modelName = this.getModelName(modelOverride)
       this.model = this.genAI.getGenerativeModel({
         model: modelName,
         generationConfig: {
@@ -49,9 +50,9 @@ export class GeminiService {
     }
   }
 
-  private getModel() {
+  private getModel(modelOverride?: string) {
     if (!this.model && this.genAI) {
-      const modelName = this.getModelName()
+      const modelName = this.getModelName(modelOverride)
       this.model = this.genAI.getGenerativeModel({ 
         model: modelName,
         generationConfig: {
@@ -291,15 +292,15 @@ export class GeminiService {
     }
   }
 
-  public async sendMessage(message: string, context?: string, history: Array<{role: string, content: string}> = []): Promise<string> {
+  public async sendMessage(message: string, context?: string, history: Array<{role: string, content: string}> = [], modelOverride?: string): Promise<string> {
     if (!this.isConfigured()) {
       throw new Error('Gemini API key not configured. Please set your API key in settings.')
     }
 
     // Reinitialize in case API key was updated
-    this.initialize()
+    this.initialize(modelOverride)
 
-    const model = this.getModel()
+    const model = this.getModel(modelOverride)
     if (!model) {
       throw new Error('Failed to initialize Gemini model')
     }

@@ -22,7 +22,7 @@ const About: React.FC<AboutProps> = ({ onClose }) => {
         </div>
         <div className="settings-content about-content">
           <h3 className="about-app-name">Forger</h3>
-          <p className="about-version">Version 0.1.1</p>
+          <p className="about-version">Version 0.2.0</p>
           <p className="about-tagline">
             {t('Standalone AI engineering editor - local-first, source-available')}
           </p>

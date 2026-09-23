@@ -400,6 +400,22 @@ function setupIpcHandlers() {
     }
   })
 
+  // Open a file with its default app (index.html -> default browser).
+  // Confined to the project root, same policy as file writes.
+  ipcMain.handle('open-path', async (event, rootPath, target) => {
+    try {
+      const base = path.resolve(rootPath)
+      const resolved = path.resolve(base, target)
+      if (resolved !== base && !resolved.startsWith(base + path.sep)) {
+        return { success: false, error: 'Path is outside the project root' }
+      }
+      const err = await shell.openPath(resolved)
+      return err ? { success: false, error: err } : { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
   // Appearance
   ipcMain.handle('set-theme-source', (event, theme) => {
     if (theme === 'system' || theme === 'dark' || theme === 'light') {

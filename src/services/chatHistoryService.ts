@@ -8,6 +8,12 @@ export interface ChatMessageRecord {
   role: 'user' | 'assistant'
   content: string
   timestamp: number
+  // Round-trip time of the LLM call that produced this message (ms)
+  latencyMs?: number
+  // Model that produced this response (e.g. "ollama:qwen3.5:4b")
+  model?: string
+  // Raw model output before command blocks became display notes (see Chat.tsx)
+  rawContent?: string
 }
 
 export interface Conversation {

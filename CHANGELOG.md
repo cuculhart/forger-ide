@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-23
+
+### Fixed
+
+- `RUN_COMMAND start <target>` (open in browser) now launches the app
+  reliably: `start` inside a transient ConPTY `cmd` could exit before the
+  browser appeared. File/URL targets are opened via Electron's
+  `shell.openPath` / `shell.openExternal` instead, confined to the project
+  root for files.
+- Small local models no longer imitate "▶️ Ran: ..." execution notes: chat
+  history sent to the model now uses the raw response, so display notes
+  (including notes saved in older chats) can no longer leak into the context
+  and be parroted back as fake results.
+- Switching provider/model in Settings mid-generation no longer retargets
+  the in-flight request: the provider and model are pinned when Send is
+  pressed, so every agent-loop step (and the model label) of one turn always
+  uses the model that was selected at send time.
+
+### Added
+
+- Response time display: each assistant message now shows the LLM call's
+  round-trip time (e.g. `(6.1s)`). In multi-step agent runs each turn shows
+  its own turnaround, which makes comparing local model speeds easy.
+- Streaming responses for the Ollama provider: replies appear token-by-token
+  like AnythingLLM/Ollama CLI, so slow local models feel alive instead of
+  sitting on "Generating response..." for a minute. Cancelling now actually
+  aborts the in-flight HTTP request. (Gemini path unchanged.)
+- Per-message model label: assistant messages show the model that produced
+  them (e.g. `assistant (ollama:qwen3.5:4b)`), so switching models mid-chat
+  stays verifiable.
+
 ## [0.1.1] - 2026-09-23
 
 ### Fixed

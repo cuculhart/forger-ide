@@ -37,6 +37,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('terminal-exit', listener)
   },
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
+  openPath: (rootPath, target) => ipcRenderer.invoke('open-path', rootPath, target),
   exportPdf: (html, suggestedName) => ipcRenderer.invoke('export-pdf', html, suggestedName),
   exportHtml: (html, suggestedName) => ipcRenderer.invoke('export-html', html, suggestedName),
 

@@ -28,7 +28,14 @@ class OllamaService {
     }
   }
 
-  async sendMessage(message: string, context?: string, history: Array<{ role: string; content: string }> = []): Promise<string> {
+  async sendMessage(
+    message: string,
+    context?: string,
+    history: Array<{ role: string; content: string }> = [],
+    onDelta?: (delta: string) => void,
+    signal?: AbortSignal,
+    modelOverride?: string,
+  ): Promise<string> {
     const messages: Array<{ role: string; content: string }> = [
       { role: 'system', content: AGENT_SYSTEM_PROMPT.trim() },
     ]
@@ -50,10 +57,11 @@ class OllamaService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: this.getModel(),
+          model: modelOverride || this.getModel(),
           messages,
-          stream: false,
+          stream: !!onDelta,
         }),
+        signal,
       })
     } catch (error: any) {
       throw new Error(
@@ -66,12 +74,52 @@ class OllamaService {
       throw new Error(`Ollama error ${res.status}: ${body.slice(0, 300) || res.statusText}`)
     }
 
-    const data = await res.json()
-    const text = data?.choices?.[0]?.message?.content
-    if (typeof text !== 'string' || !text) {
+    if (!onDelta || !res.body) {
+      const data = await res.json()
+      const text = data?.choices?.[0]?.message?.content
+      if (typeof text !== 'string' || !text) {
+        throw new Error('Ollama returned an empty response')
+      }
+      return text
+    }
+
+    // SSE stream: `data: {json}` lines terminated by `data: [DONE]`.
+    // Thinking-type models put their trace in delta.reasoning - we only
+    // surface delta.content (the user-facing reply).
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let full = ''
+    let done = false
+    while (!done) {
+      const { done: eof, value } = await reader.read()
+      if (eof) break
+      buffer += decoder.decode(value, { stream: true })
+      let nl: number
+      while ((nl = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, nl).trim()
+        buffer = buffer.slice(nl + 1)
+        if (!line.startsWith('data:')) continue
+        const payload = line.slice(5).trim()
+        if (payload === '[DONE]') {
+          done = true
+          break
+        }
+        try {
+          const piece = JSON.parse(payload)?.choices?.[0]?.delta?.content
+          if (typeof piece === 'string' && piece) {
+            full += piece
+            onDelta(piece)
+          }
+        } catch {
+          // ignore malformed SSE chunk
+        }
+      }
+    }
+    if (!full) {
       throw new Error('Ollama returned an empty response')
     }
-    return text
+    return full
   }
 }
 
