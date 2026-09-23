@@ -10,6 +10,8 @@ The name **Forger** comes from:
 
 The package and repository name is `forger-ide` (to avoid conflicts with existing projects). The product/display name is **Forger**.
 
+<video src="https://github.com/user-attachments/assets/867c8bcc-93aa-4ee4-90ef-efde5ed735e1" controls width="100%"></video>
+
 Author: Eiji Arai — Web Site: https://cuculhart.com
 
 ## Features
