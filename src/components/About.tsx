@@ -1,5 +1,6 @@
 import React from 'react'
 import { useT } from '../services/i18nService'
+import iconUrl from '../../assets/icon.png'
 import './About.css'
 
 interface AboutProps {
@@ -21,10 +22,11 @@ const About: React.FC<AboutProps> = ({ onClose }) => {
           <button className="close-button" onClick={onClose}>×</button>
         </div>
         <div className="settings-content about-content">
+          <img src={iconUrl} className="about-icon" alt="Forger" />
           <h3 className="about-app-name">Forger</h3>
           <p className="about-version">Version 0.2.0</p>
           <p className="about-tagline">
-            {t('Standalone AI engineering editor - local-first, source-available')}
+            {t('Standalone, Privacy-First AI IDE')}
           </p>
           <p className="about-license">
             {t('License')}: FSL-1.1-MIT

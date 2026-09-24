@@ -34,3 +34,27 @@ self.MonacoEnvironment = {
 }
 
 loader.config({ monaco })
+
+// Quiet Light editor theme - matches the muted warm-paper UI palette in
+// index.css ([data-theme='quiet'])
+monaco.editor.defineTheme('forger-quiet', {
+  base: 'vs',
+  inherit: true,
+  rules: [],
+  colors: {
+    'editor.background': '#f7f3ea',
+    'editor.foreground': '#4a463c',
+    'editorLineNumber.foreground': '#a29a86',
+    'editorLineNumber.activeForeground': '#6f695a',
+    'editor.lineHighlightBackground': '#ede7d6',
+    'editor.selectionBackground': '#d5e0d8',
+    'editor.inactiveSelectionBackground': '#e2ddcd',
+    'editorCursor.foreground': '#4a463c',
+    'editorWhitespace.foreground': '#d9cfba',
+    'editorWidget.background': '#efe9dc',
+    'editorWidget.border': '#d9cfba',
+    'minimap.background': '#f5f1e8',
+    'diffEditor.insertedTextBackground': '#4e8a5533',
+    'diffEditor.removedTextBackground': '#b3504033',
+  },
+})

@@ -7,10 +7,23 @@
   padding: 24px 32px 32px;
 }
 
+.about-icon {
+  width: 96px;
+  height: 96px;
+  margin-bottom: 12px;
+}
+
 .about-app-name {
   margin: 0;
   font-size: 22px;
-  color: var(--text-primary, #e0e0e0);
+  /* Brand gold sampled from the Forger banner/icon */
+  color: #f1af10;
+}
+
+[data-theme='light'] .about-app-name,
+[data-theme='quiet'] .about-app-name {
+  /* Darker amber for contrast on light backgrounds */
+  color: #a57400;
 }
 
 .about-version {

@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
+### Added
+
+- Cross-platform "open in browser": the agent prompt now documents the
+  per-OS opener (`start` / `open` / `xdg-open`), and `RUN_COMMAND`
+  intercepts all three plus `cmd /c start`, routing them through Electron's
+  `shell.openPath` / `shell.openExternal` on every platform.
+- Application icon (`assets/icon.ico` multi-size, `assets/icon.png`,
+  transparent background): applied to the packaged exe, the Squirrel
+  installer (`setupIcon`), the Add/Remove Programs entry (`iconUrl`), the
+  Linux window/deb icon, and the About dialog.
+- "Quiet Light" theme: a muted warm-paper light theme for users who find
+  pure white backgrounds glaring. Covers the full UI (CSS variables),
+  Monaco (`forger-quiet` editor theme), and the terminal, selectable via
+  Settings > Theme.
+
+### Changed
+
+- About dialog: the tagline is now the brand slogan "Standalone,
+  Privacy-First AI IDE", the app icon is shown, and the app name uses the
+  brand gold (`#f1af10`; darker amber on light themes).
+- Agent prompt: explicitly requires emitting `// WRITE_FILE:` when asked
+  to create a file (never a bare markdown code fence), using the exact
+  file name the user asked for (no renames, extension changes, or
+  subdirectory moves), the correct block terminator, and only
+  opening/running files that already exist. Fixes small local models (e.g. qwen2.5-coder:1.5b) rewriting
+  "index.html" into "routes/TestIndex.tsx" and opening files before
+  creating them.
+- Small Ollama models (<3B params, detected from the model tag) now use a
+  compact system prompt (command protocol only, no app-context text) and
+  only the last 8 history turns - long prompts and polluted history
+  degrade instruction-following at that size.
+- When no project is open, the model is told that file-operation and
+  shell commands are unavailable and to ask the user to open a project
+  first (both Ollama and Gemini), instead of receiving commands that all
+  fail and hallucinating fake files and results on retry.
+
+### Fixed
+
+- A successful "open in browser" (`start`/`open`/`xdg-open`) no longer
+  continues the agent loop: it produces no terminal output, and feeding
+  "(no output)" back made small models read it as a failure - retrying,
+  guessing the wrong OS, and fabricating results. The turn now ends with
+  a success note and closing summary. The host OS is also stated in the
+  system prompt so models stop emitting Linux commands on Windows.
+- Invented commands (e.g. "// CREATE_INDEX.HTML") are detected and
+  reported back to the model with the list of valid commands so it can
+  retry, instead of being shown as raw text that ends the turn.
+- `start`/`open`/`xdg-open` no longer chokes on trailing prose: the
+  prompt example itself showed "(or start http://localhost:3000)" inside
+  the command, which small models copy verbatim. The example was fixed
+  and unquoted trailing parenthetical text is stripped from the target.
+- Writes into a subdirectory the user never asked for are rejected before
+  touching the disk: when the request names a bare file (e.g.
+  "index.html") but the model targets "views/index.html", the write is
+  refused and the model is told to emit it at the project root instead.
+- Malformed file-command blocks are handled more gracefully: commands
+  without a colon (`// READ_FILE file.js`) and blocks closed with another
+  language's comment marker (`# END_WRITE_FILE`) now parse correctly; a
+  `// WRITE_FILE` / `// EDIT_FILE` opener that still cannot be parsed is
+  reported back to the model (naming the correct terminator) so it can
+  re-emit a complete block, and the chat shows a retry note instead of
+  raw command text.
+
 ## [0.2.0] - 2026-09-23
 
 ### Fixed

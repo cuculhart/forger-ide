@@ -84,7 +84,7 @@ const CodeEditor: React.FC<EditorProps> = ({ file, content, onChange, diff, onCl
     }
   }, [])
 
-  const monacoThemeName = monacoTheme === 'light' ? 'vs' : 'vs-dark'
+  const monacoThemeName = monacoTheme === 'dark' ? 'vs-dark' : monacoTheme === 'quiet' ? 'forger-quiet' : 'vs'
   const editorOptions = {
     minimap: { enabled: true },
     fontSize,

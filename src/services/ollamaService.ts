@@ -1,5 +1,24 @@
 import { configService } from './configService'
-import { AGENT_SYSTEM_PROMPT } from './agentPrompt'
+import { projectService } from './projectService'
+import {
+  AGENT_SYSTEM_PROMPT,
+  AGENT_SYSTEM_PROMPT_COMPACT,
+  NO_PROJECT_SYSTEM_PROMPT,
+  hostOsName,
+} from './agentPrompt'
+
+// Parameter count in billions parsed from the model tag ("qwen3:1.7b" -> 1.7);
+// null when the tag carries no size marker.
+function tagSizeBillions(model: string): number | null {
+  const tag = model.includes(':') ? model.slice(model.indexOf(':') + 1) : model
+  const m = /(\d+(?:\.\d+)?)b/i.exec(tag)
+  return m ? parseFloat(m[1]) : null
+}
+
+// Below ~3B params, long prompts and deep history degrade instruction-
+// following, so small models get the compact prompt and only recent turns.
+const SMALL_MODEL_MAX_B = 3
+const SMALL_MODEL_HISTORY = 8
 
 // Local LLM via Ollama's OpenAI-compatible endpoint (no extra deps).
 // Same text-based file-command protocol as the Gemini path.
@@ -36,11 +55,20 @@ class OllamaService {
     signal?: AbortSignal,
     modelOverride?: string,
   ): Promise<string> {
+    const model = modelOverride || this.getModel()
+    const isSmall = (tagSizeBillions(model) ?? Infinity) < SMALL_MODEL_MAX_B
+    const projectOpen = !!projectService.getCurrentProject()?.isOpen
+    const systemPrompt = !projectOpen
+      ? NO_PROJECT_SYSTEM_PROMPT
+      : isSmall
+        ? AGENT_SYSTEM_PROMPT_COMPACT
+        : AGENT_SYSTEM_PROMPT
+
     const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: AGENT_SYSTEM_PROMPT.trim() },
+      { role: 'system', content: `${systemPrompt.trim()}\n\nThe app runs on ${hostOsName()}.` },
     ]
 
-    for (const msg of history) {
+    for (const msg of isSmall ? history.slice(-SMALL_MODEL_HISTORY) : history) {
       if (msg.role === 'user' || msg.role === 'assistant') {
         messages.push({ role: msg.role, content: msg.content })
       }
@@ -57,7 +85,7 @@ class OllamaService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: modelOverride || this.getModel(),
+          model,
           messages,
           stream: !!onDelta,
         }),

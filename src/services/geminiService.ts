@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
 import { configService } from './configService'
-import { APP_CONTEXT_PROMPT, AGENT_INSTRUCTIONS } from './agentPrompt'
+import { APP_CONTEXT_PROMPT, AGENT_INSTRUCTIONS, NO_PROJECT_INSTRUCTIONS, hostOsName } from './agentPrompt'
+import { projectService } from './projectService'
 
 export class GeminiService {
   private genAI: GoogleGenerativeAI | null = null
@@ -313,9 +314,13 @@ export class GeminiService {
       
       // Host-app identity so the model answers for THIS editor, not VS Code
       prompt += APP_CONTEXT_PROMPT
+      prompt += `\nThe app runs on ${hostOsName()}.\n`
 
-      // Add instruction for file operations using simple commands
-      prompt += AGENT_INSTRUCTIONS
+      // Add instruction for file operations using simple commands - or warn
+      // that they are unavailable when no project is open
+      prompt += projectService.getCurrentProject()?.isOpen
+        ? AGENT_INSTRUCTIONS
+        : NO_PROJECT_INSTRUCTIONS
 
       // Build conversation history for Gemini
       const contents = []

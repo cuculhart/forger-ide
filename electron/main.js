@@ -163,6 +163,8 @@ async function createWindow() {
     title: 'Forger',
     width: 1400,
     height: 900,
+    // Windows uses the exe icon; this matters on Linux
+    icon: path.join(__dirname, '..', 'assets', 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

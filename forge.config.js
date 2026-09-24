@@ -1,9 +1,13 @@
 module.exports = {
   packagerConfig: {
+    // Extension-less on purpose: electron-packager picks .ico/.icns/.png per platform
+    icon: 'assets/icon',
     // .node binaries cannot be loaded from inside an asar archive
     asar: {
       unpack: '**/node_modules/node-pty/**',
     },
+    // The README/social-preview banner is repo-only; keep it out of the package
+    ignore: [/forger-banner\.png$/],
     // User-editable language files ship next to the app under resources/lang;
     // license texts ship alongside so bundled components' copyrights are preserved
     extraResource: ['lang', 'LICENSE', 'THIRD_PARTY_LICENSES.md'],
@@ -16,7 +20,12 @@ module.exports = {
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
-      config: {},
+      config: {
+        // Installer exe icon; iconUrl is shown in Add/Remove Programs and must
+        // be a public https URL to an .ico (the committed file on GitHub)
+        setupIcon: 'assets/icon.ico',
+        iconUrl: 'https://raw.githubusercontent.com/cuculhart/forger-ide/main/assets/icon.ico',
+      },
     },
     {
       name: '@electron-forge/maker-zip',
@@ -24,7 +33,11 @@ module.exports = {
     },
     {
       name: '@electron-forge/maker-deb',
-      config: {},
+      config: {
+        options: {
+          icon: 'assets/icon.png',
+        },
+      },
     },
   ],
   plugins: [],

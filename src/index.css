@@ -53,6 +53,35 @@
   --shadow: rgba(0, 0, 0, 0.15);
 }
 
+/* Quiet Light: muted warm-paper palette for users who find pure
+   white backgrounds glaring */
+[data-theme='quiet'] {
+  color-scheme: light;
+  --bg-primary: #f5f1e8;
+  --bg-secondary: #efe9dc;
+  --bg-tertiary: #e7dfcf;
+  --bg-deep: #faf7f0;
+  --bg-hover: #eae3d3;
+  --bg-active: #ded4bf;
+  --bg-hover-strong: #d2c7ae;
+  --border-color: #d9cfba;
+  --border-strong: #b5a98e;
+  --text-primary: #4a463c;
+  --text-secondary: #57524a;
+  --text-tertiary: #88816f;
+  --text-muted: #a29a86;
+  --accent: #4f7d7a;
+  --accent-hover: #416b68;
+  --accent-soft: #d3e0da;
+  --selected-bg: #cddbd2;
+  --error: #b0503f;
+  --error-hover: #96402f;
+  --diff-added: #4e8a55;
+  --diff-removed: #b35040;
+  --overlay-bg: rgba(0, 0, 0, 0.4);
+  --shadow: rgba(0, 0, 0, 0.15);
+}
+
 * {
   margin: 0;
   padding: 0;

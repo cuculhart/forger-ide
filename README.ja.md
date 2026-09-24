@@ -2,6 +2,10 @@
 
 [English](readme.md) | 日本語
 
+<p align="center">
+  <img src="assets/forger-banner.png" alt="Forger — Standalone, Privacy-First AI IDE">
+</p>
+
 ファイルエクスプローラー、コードエディター、AIチャット、Git操作、ターミナルが一体となった、スタンドアロン型のElectron製AIコーディングアシスタントです。
 
 **Forger** の名前は以下の頭文字に由来します：
@@ -21,6 +25,7 @@ Author: Eiji Arai — Web Site: https://cuculhart.com
 - **Recent Projects**: よく開く順（オープン回数+最近順）で一覧表示し、ワンクリックでオープン
 - **セッション復元**: リロードや再起動後に、最後に開いていたプロジェクト・ファイル・チャット履歴を自動復元
 - **ファイル/フォルダ作成**: エクスプローラーの📄+/📁+ボタンまたはメニューからインライン作成
+- **ドラッグ&ドロップ**: exeやアプリウィンドウにフォルダをドロップするとプロジェクトとしてオープン（`Forger.exe <path>` でも可。二重起動時は既存インスタンスに引き渡し）
 
 ### エディター
 
@@ -34,9 +39,10 @@ Author: Eiji Arai — Web Site: https://cuculhart.com
 ### AIチャット
 
 - **エージェントループ**: AIがファイル操作コマンドを発行し、結果をフィードバックしながら複数ステップで自律作業（一覧取得 → 読み込み → 編集）
-- **自動コンテキスト管理**: プロジェクト全体を自動で読み込み、重要ファイルを優先し、長いファイルを分割してAIに提供（🧠ボタンで手動選択モードに切替可能）
+- **コンテキスト管理**: デフォルトではファイルツリー（パス一覧）のみを送信してトークンを節約し、AIがREAD_FILE/GREPで必要に応じて内容を取得。🧠ボタンで手動ファイル選択モードに切替可能。モードと上限はSettings > AI Contextで設定可能
 - **安全な書き込み制御**: 書き込みはプロジェクトルート内に限定。外部への書き込みは拒否
 - **プロジェクト別チャット永続化**: プロジェクトごとに会話をlocalStorageに保存し、再オープン時に復元
+- **チェックポイント&ロールバック**: AI書き込み前にスナップショットを取得。「↩ Rollback」でAIが触ったファイルのみ復元
 - **Retryボタン**: 最後の回答を再生成
 - **キャンセル・タイムアウト・応答長制限** 対応済み
 
@@ -56,12 +62,18 @@ Author: Eiji Arai — Web Site: https://cuculhart.com
 - **URL検出**: 出力中の `http://localhost:...` をクリックするとブラウザで開く
 - **AIからのコマンド実行**: `// RUN_COMMAND:` コマンドを発行可能。必ずユーザー承認を挟み、stdout/stderrと終了コードをAIにフィードバック
 
+### Markdown
+
+- **プレビュー**: `.md` ファイルをエディターヘッダーで Preview/Edit 切替（marked + DOMPurify、GFM対応）
+- **エクスポート**: スタイル埋め込みの単一HTMLファイルまたはPDF（Electron `printToPDF`）へ出力 — エディターヘッダーまたはFileメニューから。拡張機能やPandoc不要
+
 ### 外観・設定
 
 - **テーマ**: System / Dark / Light（OS設定連動、nativeTheme経由）
 - **フォント**: ファミリー・サイズをUI全体とMonacoエディターに反映
 - **LLMプロバイダー**: Gemini API（クラウド）/ Ollama（ローカル・オフライン）を設定画面で切替。モデル選択・LiteLLMプロキシにも対応
 - **UI言語**: Settings > Appearance > Language で切替。`lang/<code>.json` を追加すれば誰でも言語を追加可能
+- **About**: Help > About Forger
 - **ネイティブメニュー**: File / Edit / View / Window / Help
 
 ## アーキテクチャ
@@ -73,17 +85,19 @@ Electron アプリ
 │   ├── ファイルシステムアクセス
 │   ├── フォルダ選択ダイアログ
 │   ├── nativeTheme（テーマ連携）
+│   ├── ターミナル/PTY (node-pty)
 │   └── Git操作 (simple-git)
 ├── レンダラープロセス (React/TypeScript)
-│   ├── エクスプローラー / Gitパネル（サイドバータブ）
+│   ├── エクスプローラー / Gitパネル / Search（サイドバータブ）
 │   ├── エディターペイン (Monaco / DiffEditor)
 │   ├── チャットペイン（エージェントループ）
-│   └── コンテキスト管理サービス
+│   ├── ターミナルペイン (xterm.js)
+│   └── コンテキスト管理 / i18nサービス
 └── LLM統合
     ├── Gemini API
-    ├── ファイル操作コマンド（エージェントループ）
+    ├── Ollama（ローカル・オフライン）
     ├── LiteLLMプロキシ（オプション）
-    └── Ollama（ローカルLLM・オフライン対応）
+    └── ファイル操作コマンド（エージェントループ）
 ```
 
 ## セキュリティアーキテクチャ
@@ -122,7 +136,7 @@ litellm --model gemini/gemini-3.8-flash --api_key YOUR_REAL_API_KEY
 
 ### CSPポリシーについて
 
-`index.html` のContent Security Policyは `localhost` への接続を許可していますが、これは「許可リスト」であり接続を必須にするものではありません。パッケージ版では使われないだけで害はなく、将来のOllama（`http://localhost:11434`）対応でもそのまま利用できます。
+`index.html` のContent Security Policyは `localhost` への接続を許可していますが、これは「許可リスト」であり接続を必須にするものではありません。パッケージ版でも害はなく、Ollamaプロバイダー（`http://localhost:11434`）への接続を可能にします。
 
 ### チャットとプロジェクトの関係
 
@@ -160,6 +174,7 @@ litellm --model gemini/gemini-3.8-flash --api_key YOUR_REAL_API_KEY
 
 - ✅ **多言語対応の基盤** — `lang/<code>.json` に英語原文→訳文の対応表を置くだけで言語追加可能（`_name`が言語表示名）。devはプロジェクト直下`lang/`、パッケージ版は`resources/lang/`（exe隣、ユーザー編集可）。Settings > Appearance > Languageで切替。UI側は `useT()` フック + `t('Explorer')` で参照
 - ✅ **Ollama対応** — Settings > LLM Provider で `Gemini / Ollama` 切替。OllamaはOpenAI互換API（`/v1/chat/completions`）をfetch直叩き（新規依存なし）。エンドポイント・モデルは設定可能、`/api/tags`からインストール済みモデルを自動検出。完全オフライン動作可
+- ✅ **About画面** — Help > About Forger（作者・Webサイト・ライセンス表示）
 
 ### 今後の計画（実装優先度順）
 
@@ -170,8 +185,9 @@ litellm --model gemini/gemini-3.8-flash --api_key YOUR_REAL_API_KEY
 - **フレームワーク**: Electron + React + TypeScript
 - **エディター**: Monaco Editor
 - **Git**: simple-git
+- **ターミナル**: node-pty + xterm.js
 - **LLM**: Gemini API / Ollama（ローカル）
-- **ビルドツール**: Vite
+- **ビルドツール**: Vite + Electron Forge
 - **設定管理**: ConfigService + localStorage
 - **プロキシ**: LiteLLM（オプション）
 - **Node.js**: v22 LTS推奨
@@ -201,7 +217,7 @@ npm run dev
 1. アプリを起動
 2. Explorerの📂ボタンをクリック
 3. 「Select Folder」で既存フォルダを選択、または「New Project」で新規作成
-4. Recent Projectsから過去のプロジェクトを再オープンすることも可能
+4. Recent Projectsからの再オープンや、exe/ウィンドウへのフォルダドロップも可能
 
 ### AIチャットを使用する
 
@@ -213,9 +229,9 @@ npm run dev
 
 ### コンテキスト管理
 
-- **自動モード**: プロジェクト全体を自動で読み込み、重要ファイルを優先
+- **自動モード**: ファイルツリー（パス一覧）を送信。AIはツール経由で必要に応じてファイル内容を取得
 - **手動モード**: エクスプローラーのファイル選択ボタンでAIコンテキストに追加
-- 🧠ボタンで自動/手動モードを切り替え
+- 🧠ボタンで自動/手動モードを切替。Settings > AI Context で設定可能
 
 ### AIによるファイル操作
 

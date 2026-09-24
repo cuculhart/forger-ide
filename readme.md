@@ -2,6 +2,10 @@
 
 English | [日本語](README.ja.md)
 
+<p align="center">
+  <img src="assets/forger-banner.png" alt="Forger — Standalone, Privacy-First AI IDE">
+</p>
+
 A standalone Electron-based AI coding assistant that combines a file explorer, code editor, AI chat, Git operations, and a terminal in one app.
 
 The name **Forger** comes from:
@@ -135,7 +139,7 @@ This app is distributed standalone as **source-available** software (license: FS
 
 ### CSP Policy
 
-`index.html`'s Content Security Policy allows connections to `localhost`, but this is an allow-list, not a requirement. It is harmless in packaged builds and enables Ollama (`http://localhost:11434`).
+`index.html`'s Content Security Policy allows connections to `localhost`, but this is an allow-list, not a requirement. It is harmless in packaged builds and is what permits the Ollama provider (`http://localhost:11434`) to connect.
 
 ### Chat and Projects
 

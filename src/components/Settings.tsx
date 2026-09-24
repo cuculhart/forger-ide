@@ -259,6 +259,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
                 <option value="system">{t('System')}</option>
                 <option value="dark">{t('Dark')}</option>
                 <option value="light">{t('Light')}</option>
+                <option value="quiet">{t('Quiet Light')}</option>
               </select>
             </div>
 

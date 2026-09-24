@@ -63,6 +63,35 @@ function resolveFilePath(inputPath: string): { path?: string; error?: string } {
   return { path: trimmed }
 }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+// Resolved absolute path -> path relative to the project root (or unchanged
+// when no project / outside the root)
+function pathRelativeToRoot(absPath: string): string {
+  const project = projectService.getCurrentProject()
+  const root = project?.rootPath.replace(/\\/g, '/').replace(/\/+$/, '') ?? ''
+  const norm = absPath.replace(/\\/g, '/')
+  return root && norm.toLowerCase().startsWith(root.toLowerCase() + '/')
+    ? norm.slice(root.length + 1)
+    : norm
+}
+
+// The user asked for a bare file name ("index.html") but the model targets a
+// subdirectory they never mentioned ("views/index.html") -> return that
+// directory so the write can be redirected to the project root.
+function findUnrequestedSubdir(userText: string, relPath: string): string | null {
+  const parts = relPath.replace(/\\/g, '/').split('/')
+  const dirs = parts.slice(0, -1).filter(p => p && p !== '.')
+  if (dirs.length === 0) return null
+  const basename = parts[parts.length - 1]
+  const mentioned = new RegExp(`(^|[^\\w])${escapeRegExp(basename)}([^\\w]|$)`, 'i').test(userText)
+  if (!mentioned) return null
+  const lower = userText.toLowerCase()
+  return dirs.some(d => !lower.includes(d.toLowerCase())) ? dirs.join('/') : null
+}
+
 interface FileCommand {
   type: 'write' | 'read' | 'list' | 'run' | 'grep' | 'find' | 'edit'
   arg: string
@@ -96,39 +125,41 @@ function findFileCommands(response: string): FileCommand[] {
   const commands: FileCommand[] = []
   let match
 
-  const writeFileRegex = /\/\/ WRITE_FILE:\s*([^\n]+?)\n([\s\S]*?)\/\/ END_WRITE_FILE/g
+  // Small models sometimes drop the colon ("// READ_FILE x") or close blocks
+  // with another language's comment marker ("# END_WRITE_FILE") - tolerate both.
+  const writeFileRegex = /\/\/ WRITE_FILE[ \t]*:?[ \t]*([^\n]+?)\n([\s\S]*?)(?:\/\/|#|--)[ \t]*END_WRITE_FILE/g
   while ((match = writeFileRegex.exec(response)) !== null) {
     commands.push({ type: 'write', arg: match[1].trim(), body: match[2], start: match.index, end: match.index + match[0].length })
   }
 
-  const editFileRegex = /\/\/ EDIT_FILE:\s*([^\n]+?)\n([\s\S]*?)\/\/ END_EDIT_FILE/g
+  const editFileRegex = /\/\/ EDIT_FILE[ \t]*:?[ \t]*([^\n]+?)\n([\s\S]*?)(?:\/\/|#|--)[ \t]*END_EDIT_FILE/g
   while ((match = editFileRegex.exec(response)) !== null) {
     commands.push({ type: 'edit', arg: match[1].trim(), body: match[2], start: match.index, end: match.index + match[0].length })
   }
 
   // The AI sometimes puts several commands on one line ("// READ_FILE: a// LIST_FILES: b"),
   // so the path argument ends at the next "//" command or the end of the line.
-  const readFileRegex = /\/\/ READ_FILE:\s*([^\n]+?)(?=\s*\/\/|\n|$)/g
+  const readFileRegex = /\/\/ READ_FILE[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = readFileRegex.exec(response)) !== null) {
     commands.push({ type: 'read', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
   }
 
-  const listFilesRegex = /\/\/ LIST_FILES:\s*([^\n]+?)(?=\s*\/\/|\n|$)/g
+  const listFilesRegex = /\/\/ LIST_FILES[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = listFilesRegex.exec(response)) !== null) {
     commands.push({ type: 'list', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
   }
 
-  const runCommandRegex = /\/\/ RUN_COMMAND:\s*([^\n]+?)(?=\s*\/\/|\n|$)/g
+  const runCommandRegex = /\/\/ RUN_COMMAND[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = runCommandRegex.exec(response)) !== null) {
     commands.push({ type: 'run', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
   }
 
-  const grepRegex = /\/\/ GREP:\s*([^\n]+?)(?=\s*\/\/|\n|$)/g
+  const grepRegex = /\/\/ GREP[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = grepRegex.exec(response)) !== null) {
     commands.push({ type: 'grep', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
   }
 
-  const findFilesRegex = /\/\/ FIND_FILES:\s*([^\n]+?)(?=\s*\/\/|\n|$)/g
+  const findFilesRegex = /\/\/ FIND_FILES[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = findFilesRegex.exec(response)) !== null) {
     commands.push({ type: 'find', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
   }
@@ -193,10 +224,37 @@ async function parseAndExecuteFileCommands(
   response: string,
   requestApproval: (edits: FileEdit[]) => Promise<FileEdit[] | null>,
   requestCommandApproval: (commands: string[]) => Promise<string[] | null>,
-  runCommandAndWait: (command: string) => Promise<RunResult>
+  runCommandAndWait: (command: string) => Promise<RunResult>,
+  userText: string
 ): Promise<CommandExecutionResult> {
   const commands = findFileCommands(response)
-  if (commands.length === 0) {
+
+  // Small models sometimes open a WRITE_FILE/EDIT_FILE block but close it
+  // with the wrong terminator (e.g. // END_EDIT_FILE) or none at all. The
+  // block then parses as nothing and would be silently shown as raw text -
+  // report it back so the model can re-emit a complete block.
+  const malformedBlocks: string[] = []
+  if (/\/\/ WRITE_FILE\b/.test(response) && !commands.some(c => c.type === 'write')) {
+    malformedBlocks.push('WRITE_FILE')
+  }
+  if (/\/\/ EDIT_FILE\b/.test(response) && !commands.some(c => c.type === 'edit')) {
+    malformedBlocks.push('EDIT_FILE')
+  }
+
+  // Invented commands like "// CREATE_INDEX.HTML" - the model made up its own
+  // grammar. Only names containing "_" or "." count (plain "// TODO"-style
+  // comments are ignored), and known command names/terminators are excluded.
+  const KNOWN_COMMAND_NAMES = new Set([
+    'WRITE_FILE', 'EDIT_FILE', 'READ_FILE', 'LIST_FILES', 'RUN_COMMAND',
+    'GREP', 'FIND_FILES', 'END_WRITE_FILE', 'END_EDIT_FILE',
+  ])
+  const inventedCmds = [...new Set(
+    (response.match(/^\/\/[ \t]*[A-Z][A-Z0-9_.-]*(?=[ \t:]|$)/gm) ?? [])
+      .map(m => m.replace(/^\/\/[ \t]*/, '').replace(/[ \t:].*$/, '').trim())
+      .filter(name => (name.includes('_') || name.includes('.')) && !KNOWN_COMMAND_NAMES.has(name))
+  )]
+
+  if (commands.length === 0 && malformedBlocks.length === 0 && inventedCmds.length === 0) {
     return { display: response, feedback: [], needsContinuation: false }
   }
   if (!window.electronAPI) {
@@ -207,6 +265,24 @@ async function parseAndExecuteFileCommands(
   const feedback: string[] = []
   const checkpoint: { path: string; prevContent: string; existed: boolean }[] = []
   let needsContinuation = false
+
+  if (malformedBlocks.length > 0) {
+    feedback.push(
+      `Malformed command block(s): ${malformedBlocks.join(', ')}. ` +
+      'A WRITE_FILE block must end with "// END_WRITE_FILE" and an EDIT_FILE block with "// END_EDIT_FILE". ' +
+      'Emit the complete block again with the correct terminator.'
+    )
+    needsContinuation = true
+  }
+  if (inventedCmds.length > 0) {
+    feedback.push(
+      `Unknown command(s): ${inventedCmds.map(c => `// ${c}`).join(', ')}. ` +
+      'Valid commands are "// WRITE_FILE:", "// EDIT_FILE:", "// READ_FILE:", "// LIST_FILES:", "// GREP:", "// FIND_FILES:", "// RUN_COMMAND:" ' +
+      '(WRITE_FILE/EDIT_FILE blocks close with "// END_WRITE_FILE" / "// END_EDIT_FILE"). ' +
+      'To create a file, emit "// WRITE_FILE: <file_path>", the content, then "// END_WRITE_FILE".'
+    )
+    needsContinuation = true
+  }
   const pendingWrites: { index: number; path: string; arg: string; body: string }[] = []
   const pendingEdits: { index: number; path: string; arg: string; body: string }[] = []
   const pendingRuns: { index: number; command: string }[] = []
@@ -222,7 +298,19 @@ async function parseAndExecuteFileCommands(
         feedback.push(`WRITE_FILE ${cmd.arg}: rejected - ${resolved.error}`)
         needsContinuation = true
       } else {
-        pendingWrites.push({ index: i, path: resolved.path, arg: cmd.arg, body: cmd.body ?? '' })
+        const rel = pathRelativeToRoot(resolved.path)
+        const strayDir = findUnrequestedSubdir(userText, rel)
+        if (strayDir) {
+          const base = rel.split('/').pop() ?? cmd.arg
+          notes[i] = `⚠️ ${i18nService.t('Rejected write to')} ${cmd.arg}: ${i18nService.t('subdirectory was not requested')}`
+          feedback.push(
+            `WRITE_FILE ${cmd.arg}: rejected - the user asked for "${base}" with no directory; ` +
+            `"${strayDir}/" was never requested. Emit "// WRITE_FILE: ${base}" to write it at the project root instead.`
+          )
+          needsContinuation = true
+        } else {
+          pendingWrites.push({ index: i, path: resolved.path, arg: cmd.arg, body: cmd.body ?? '' })
+        }
       }
     } else if (cmd.type === 'edit') {
       if (resolved.error || !resolved.path) {
@@ -432,10 +520,20 @@ async function parseAndExecuteFileCommands(
             ? i18nService.t('still running after timeout (visible in the Terminal panel; the user can type stdin input there if the program is interactive)')
             : `${i18nService.t('exit code')} ${result.exitCode}`
         notes[r.index] = `▶️ ${i18nService.t('Ran')}: ${r.command} (${statusText})`
-        feedback.push(
-          `RUN_COMMAND ${r.command} result - ${statusText}:\n${tail || '(no output)'}`
-        )
-        needsContinuation = true
+        if (result.opened) {
+          // Opening via the OS shell produces no terminal output - that IS
+          // success. Feeding "(no output)" back makes small models read it as
+          // failure and spiral into retries/platform hallucinations, so the
+          // turn ends here (feedback still triggers the closing summary).
+          feedback.push(
+            `RUN_COMMAND ${r.command}: opened successfully in the user's default application. No terminal output is expected - do not retry or troubleshoot.`
+          )
+        } else {
+          feedback.push(
+            `RUN_COMMAND ${r.command} result - ${statusText}:\n${tail || '(no output)'}`
+          )
+          needsContinuation = true
+        }
       } catch (error) {
         notes[r.index] = `⚠️ ${i18nService.t('Error running')} ${r.command}: ${error}`
         feedback.push(`RUN_COMMAND ${r.command}: failed - ${error}`)
@@ -453,6 +551,12 @@ async function parseAndExecuteFileCommands(
     cursor = cmd.end
   })
   display += response.slice(cursor)
+  if (malformedBlocks.length > 0) {
+    display += `\n\n⚠️ ${i18nService.t('Incomplete command block - asking the model to retry')}`
+  }
+  if (inventedCmds.length > 0) {
+    display += `\n\n⚠️ ${i18nService.t('Unknown command - asking the model to retry')}`
+  }
 
   return { display: display.trim(), feedback, needsContinuation, checkpoint }
 }
@@ -577,10 +681,19 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
       }
 
       // `start` inside a transient ConPTY cmd can exit before the launched
-      // app appears. Open documents/URLs through the OS shell instead.
-      const startMatch = command.match(/^\s*(?:cmd(?:\.exe)?\s+\/c\s+)?start\s+(.*)$/i)
+      // app appears. Open documents/URLs through the OS shell instead -
+      // this also catches the Linux/macOS openers (xdg-open / open) and
+      // works for a "start" emitted on any platform.
+      const startMatch = command.match(/^\s*(?:cmd(?:\.exe)?\s+\/c\s+)?(?:start|xdg-open|open)\s+(.*)$/i)
       if (startMatch) {
-        const target = startMatch[1].trim().replace(/^""\s*/, '').replace(/^"|"$/g, '')
+        // Small models append prose like "  (or start http://...)" copied from
+        // prompt examples - cut it off. Quoted targets are left alone (a file
+        // name may legitimately contain parentheses).
+        let target = startMatch[1].trim().replace(/^""\s*/, '')
+        if (!target.startsWith('"')) {
+          target = target.replace(/\s{2,}(?:\(|#|\/\/).*$/, '')
+        }
+        target = target.replace(/^"|"$/g, '')
         if (target) {
           const isUrl = /^https?:\/\//i.test(target)
           if ((isUrl && !window.electronAPI.openExternal) || (!isUrl && !window.electronAPI.openPath)) {
@@ -785,7 +898,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
         const callStart = performance.now()
         const response = await llmService.sendMessage(currentInput, context, historyForRequest, onDelta, controller.signal, llmPin)
         const latencyMs = Math.round(performance.now() - callStart)
-        const { display, feedback, needsContinuation, checkpoint } = await parseAndExecuteFileCommands(response, requestApproval, requestCommandApproval, runCommandAndWait)
+        const { display, feedback, needsContinuation, checkpoint } = await parseAndExecuteFileCommands(response, requestApproval, requestCommandApproval, runCommandAndWait, userMessage.content)
         setStreamingText(null)
         if (checkpoint && checkpoint.length > 0) {
           checkpointsRef.current.push(checkpoint)
@@ -830,7 +943,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
         const summaryStart = performance.now()
         const summary = await llmService.sendMessage(summaryInput, context, historyForRequest, onSummaryDelta, controller.signal, llmPin)
         const summaryLatencyMs = Math.round(performance.now() - summaryStart)
-        const { display: summaryDisplay } = await parseAndExecuteFileCommands(summary, requestApproval, requestCommandApproval, runCommandAndWait)
+        const { display: summaryDisplay } = await parseAndExecuteFileCommands(summary, requestApproval, requestCommandApproval, runCommandAndWait, userMessage.content)
         setStreamingText(null)
         const summaryText = summaryDisplay || getSummaryStreamed()
         if (summaryText) {

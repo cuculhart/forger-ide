@@ -1,6 +1,6 @@
 import { configService, ThemeMode } from './configService'
 
-export type ResolvedTheme = 'dark' | 'light'
+export type ResolvedTheme = 'dark' | 'light' | 'quiet'
 
 const darkMediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
 
@@ -43,7 +43,8 @@ class ThemeService {
   private apply(): void {
     const resolved = this.getResolvedTheme()
     document.documentElement.setAttribute('data-theme', resolved)
-    window.electronAPI?.setThemeSource?.(this.mode)
+    // nativeTheme only knows system/light/dark - 'quiet' is a light variant
+    window.electronAPI?.setThemeSource?.(this.mode === 'quiet' ? 'light' : this.mode)
     window.dispatchEvent(new CustomEvent<ResolvedTheme>('theme-changed', { detail: resolved }))
   }
 
