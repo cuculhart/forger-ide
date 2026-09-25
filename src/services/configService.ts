@@ -261,8 +261,13 @@ class ConfigService {
     }
   }
 
+  // "Clear API Key" in Settings - only the Gemini credentials/proxy are
+  // removed. Theme, provider, and Ollama settings must survive.
   clear(): void {
-    this.config.clear()
+    this.config.delete('GEMINI_API_KEY')
+    this.config.delete('GEMINI_MODEL')
+    this.config.delete('GEMINI_CUSTOM_MODEL')
+    this.config.delete('LLM_PROXY_URL')
     localStorage.removeItem('gemini_api_key')
     localStorage.removeItem('gemini_model')
     localStorage.removeItem('gemini_custom_model')

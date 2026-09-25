@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-25
+
+### Added
+
+- Right-click context menu (undo/redo/cut/copy/paste/select-all in
+  editable fields, copy/select-all on selected text) - Electron ships no
+  built-in one, so chat text could not be copied on Linux/Windows.
+- README: `git clone` and Node.js v22 install via `n`/`nvm` documented in
+  Getting Started (English and Japanese).
+
+### Fixed
+
+- Settings: the Save/Clear buttons only apply to Gemini settings and are
+  now hidden when the provider is Ollama - everything Ollama-side applies
+  on change, so they blocked saving for no reason.
+- "Clear API Key" no longer wipes unrelated settings (theme, provider,
+  Ollama endpoint/model) - it deleted the entire in-memory config.
+- `// END_READ_FILE`-style invented terminators no longer trigger the
+  "unknown command" retry; only invented openers do.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

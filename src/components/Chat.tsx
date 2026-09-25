@@ -251,7 +251,11 @@ async function parseAndExecuteFileCommands(
   const inventedCmds = [...new Set(
     (response.match(/^\/\/[ \t]*[A-Z][A-Z0-9_.-]*(?=[ \t:]|$)/gm) ?? [])
       .map(m => m.replace(/^\/\/[ \t]*/, '').replace(/[ \t:].*$/, '').trim())
-      .filter(name => (name.includes('_') || name.includes('.')) && !KNOWN_COMMAND_NAMES.has(name))
+      .filter(name => (name.includes('_') || name.includes('.'))
+        && !KNOWN_COMMAND_NAMES.has(name)
+        // "// END_READ_FILE"-style invented terminators are harmless - the
+        // command itself already parsed (or is caught as a malformed block).
+        && !name.startsWith('END_'))
   )]
 
   if (commands.length === 0 && malformedBlocks.length === 0 && inventedCmds.length === 0) {

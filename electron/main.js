@@ -195,6 +195,22 @@ async function createWindow() {
     }
   }
 
+  // Right-click context menu - Electron ships no default one, so without
+  // this there is no way to copy selected chat text (Linux/Windows).
+  const { Menu } = require('electron')
+  mainWindow.webContents.on('context-menu', (e, params) => {
+    const items = params.isEditable
+      ? [
+          { role: 'undo' }, { role: 'redo' }, { type: 'separator' },
+          { role: 'cut' }, { role: 'copy' }, { role: 'paste' },
+          { type: 'separator' }, { role: 'selectAll' },
+        ]
+      : params.selectionText.trim()
+        ? [{ role: 'copy' }, { type: 'separator' }, { role: 'selectAll' }]
+        : []
+    if (items.length) Menu.buildFromTemplate(items).popup()
+  })
+
   // Deliver the CLI folder arg (folder dropped on the exe) once loaded
   mainWindow.webContents.on('did-finish-load', sendFolderArg)
 

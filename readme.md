@@ -202,9 +202,24 @@ Implemented packaging work:
 - npm
 - Git (for the Git panel)
 
+On Linux/macOS, if your distro's Node is older than v22, install v22 with
+a version manager:
+
+```bash
+# Option A: n
+npm install -g n
+n 22
+
+# Option B: nvm
+nvm install 22 && nvm use 22
+```
+
 ### Install
 
 ```bash
+git clone https://github.com/cuculhart/forger-ide.git
+cd forger-ide
+
 # Install dependencies
 npm install
 

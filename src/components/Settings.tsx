@@ -501,6 +501,9 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
             </button>
           </div>
 
+          {/* Nothing needs a manual Save for Ollama - every setting there
+              applies on change. The buttons only manage Gemini settings. */}
+          {provider === 'gemini' && (
           <div className="setting-actions">
             <button 
               className="save-button" 
@@ -517,6 +520,7 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
               {t('Clear API Key')}
             </button>
           </div>
+          )}
         </div>
       </div>
     </div>

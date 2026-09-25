@@ -200,9 +200,24 @@ litellm --model gemini/gemini-3.8-flash --api_key YOUR_REAL_API_KEY
 - npm
 - Git（Gitパネル使用時）
 
+Linux/macOSでディストリビューションのNodeがv22より古い場合は、
+バージョン管理ツールでv22を導入してください:
+
+```bash
+# 方法A: n
+npm install -g n
+n 22
+
+# 方法B: nvm
+nvm install 22 && nvm use 22
+```
+
 ### インストール
 
 ```bash
+git clone https://github.com/cuculhart/forger-ide.git
+cd forger-ide
+
 # 依存関係のインストール
 npm install
 
