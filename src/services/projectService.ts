@@ -93,6 +93,16 @@ class ProjectService {
     return new Map(this.openFiles)
   }
 
+  // LLM context uses project-relative paths - absolute paths would leak the
+  // OS user name (e.g. C:\Users\<name>\...) to cloud providers.
+  private relativePath(absPath: string): string {
+    const root = this.currentProject?.rootPath.replace(/\\/g, '/').replace(/\/+$/, '')
+    const norm = absPath.replace(/\\/g, '/')
+    return root && norm.toLowerCase().startsWith(root.toLowerCase() + '/')
+      ? norm.slice(root.length + 1)
+      : norm
+  }
+
   async getProjectContext(): Promise<string> {
     if (!this.currentProject) {
       return 'No project is currently open.'
@@ -101,15 +111,14 @@ class ProjectService {
     // If user has manually selected files, use those
     if (this.selectedFiles.size > 0) {
       let context = `Project: ${this.currentProject.name}\n`
-      context += `Root: ${this.currentProject.rootPath}\n`
       context += `Selected Files: ${this.selectedFiles.size}\n\n`
 
       for (const filePath of this.selectedFiles) {
         try {
           const content = await this.readFile(filePath)
-          context += `\n--- ${filePath} ---\n${content}\n`
+          context += `\n--- ${this.relativePath(filePath)} ---\n${content}\n`
         } catch (error) {
-          context += `\n--- ${filePath} ---\nError reading file\n`
+          context += `\n--- ${this.relativePath(filePath)} ---\nError reading file\n`
         }
       }
 
@@ -121,9 +130,10 @@ class ProjectService {
     if (configService.getContextMode() === 'full') {
       try {
         const allFiles = await this.getAllFiles()
+        const root = this.currentProject.rootPath.replace(/\\/g, '/').replace(/\/+$/, '')
         return await contextService.buildProjectContext(
-          allFiles.map(f => f.path),
-          this.readFile.bind(this),
+          allFiles.map(f => this.relativePath(f.path)),
+          (p) => this.readFile(`${root}/${p}`),
         )
       } catch (error) {
         console.error('Failed to build full context:', error)
@@ -146,7 +156,6 @@ class ProjectService {
     }
     // Fallback to simple context
     let context = `Project: ${this.currentProject.name}\n`
-    context += `Root: ${this.currentProject.rootPath}\n\n`
     return context
   }
 

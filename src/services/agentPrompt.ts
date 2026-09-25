@@ -67,11 +67,7 @@ RULES for RUN_COMMAND:
 - Commands run in the project root directory and always require user approval before execution.
 - Prefer safe, read-only or build/test commands (npm test, npm run build, dir, git status).
 - Long-running servers (npm start, docker compose up) will time out but keep running; check their early output instead of waiting for exit.
-- To open a file or URL in the user's default web browser, emit the opener for the user's OS:
-  Windows: // RUN_COMMAND: start index.html
-  macOS:   // RUN_COMMAND: open index.html
-  Linux:   // RUN_COMMAND: xdg-open index.html
-  A URL such as http://localhost:3000 works in place of the file path.
+- To open a file or URL in the user's default web browser, emit "// RUN_COMMAND: <opener> <target>" using the opener named in the host-OS note (e.g. "start index.html" on Windows, "xdg-open index.html" on Linux). Do not just explain the steps - emit the command. A URL such as http://localhost:3000 works in place of the file path.
 - Only open or run a file that exists. If the file does not exist yet, emit WRITE_FILE first and the opener afterwards (commands run in order, so both may appear in one reply).
 - Destructive commands (deleting files, modifying system state) may be rejected by the user.`
 
@@ -100,4 +96,10 @@ export const NO_PROJECT_SYSTEM_PROMPT =
 export function hostOsName(): string {
   const p = window.electronAPI?.platform
   return p === 'win32' ? 'Windows' : p === 'darwin' ? 'macOS' : 'Linux'
+}
+
+// The browser opener command for the host OS (start / open / xdg-open).
+export function hostOpenCommand(): string {
+  const p = window.electronAPI?.platform
+  return p === 'win32' ? 'start' : p === 'darwin' ? 'open' : 'xdg-open'
 }

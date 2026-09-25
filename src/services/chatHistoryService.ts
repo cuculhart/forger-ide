@@ -84,6 +84,10 @@ class ChatHistoryService {
       writeStore(store)
     }
   }
+
+  clearAll(): void {
+    localStorage.removeItem(STORE_KEY)
+  }
 }
 
 export const chatHistoryService = new ChatHistoryService()

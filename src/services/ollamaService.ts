@@ -5,6 +5,7 @@ import {
   AGENT_SYSTEM_PROMPT_COMPACT,
   NO_PROJECT_SYSTEM_PROMPT,
   hostOsName,
+  hostOpenCommand,
 } from './agentPrompt'
 
 // Parameter count in billions parsed from the model tag ("qwen3:1.7b" -> 1.7);
@@ -64,8 +65,14 @@ class OllamaService {
         ? AGENT_SYSTEM_PROMPT_COMPACT
         : AGENT_SYSTEM_PROMPT
 
+    // Name the host OS and its browser opener explicitly - small models told
+    // "pick the opener for your OS" tend to list all three instead of acting.
+    const osNote = projectOpen
+      ? `The app runs on ${hostOsName()}. To open a file/URL in the browser, emit "// RUN_COMMAND: ${hostOpenCommand()} <target>".`
+      : `The app runs on ${hostOsName()}.`
+
     const messages: Array<{ role: string; content: string }> = [
-      { role: 'system', content: `${systemPrompt.trim()}\n\nThe app runs on ${hostOsName()}.` },
+      { role: 'system', content: `${systemPrompt.trim()}\n\n${osNote}` },
     ]
 
     for (const msg of isSmall ? history.slice(-SMALL_MODEL_HISTORY) : history) {

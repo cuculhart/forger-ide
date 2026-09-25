@@ -48,16 +48,28 @@ const CodeEditor: React.FC<EditorProps> = ({ file, content, onChange, diff, onCl
     gotoLineNow(gotoLine.line)
   }, [gotoLine])
 
-  // Route Edit-menu undo/redo to Monaco when it has focus; fall back to
-  // native undo for regular inputs (the chat textarea etc.).
+  // Route Edit-menu undo/redo to Monaco's model. The menu accelerator consumed
+  // the native Ctrl+Z, so Monaco never sees it. hasTextFocus() is unreliable
+  // here because opening the native menu blurs the editor - decide from
+  // document.activeElement instead and call model.undo()/redo() directly.
   useEffect(() => {
     const handleMenu = (event: Event) => {
       const action = (event as CustomEvent).detail
       if (action !== 'undo' && action !== 'redo') return
 
       const editor = editorRef.current
-      if (editor?.hasTextFocus()) {
-        editor.trigger('menu', action, null)
+      const model = editor?.getModel?.() ?? null
+      const active = document.activeElement as HTMLElement | null
+      const inEditor = !!(editor && active && editor.getDomNode()?.contains(active))
+      const editableOutside = !inEditor && !!active && (
+        active.tagName === 'TEXTAREA' ||
+        (active.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|range|color|file)$/i.test((active as HTMLInputElement).type)) ||
+        active.isContentEditable
+      )
+
+      if (model && !editableOutside) {
+        if (action === 'undo') model.undo()
+        else model.redo()
       } else if (action === 'undo') {
         window.electronAPI?.editUndo()
       } else {
@@ -165,6 +177,8 @@ const CodeEditor: React.FC<EditorProps> = ({ file, content, onChange, diff, onCl
           ) : (
           <Editor
             height="100%"
+            path={file}
+            keepCurrentModel
             defaultLanguage={getLanguage(file)}
             language={getLanguage(file)}
             value={content}

@@ -3,6 +3,7 @@ import { configService, ThemeMode, ContextMode, LlmProvider } from '../services/
 import { ollamaService } from '../services/ollamaService'
 import { i18nService, useT } from '../services/i18nService'
 import { themeService } from '../services/themeService'
+import { chatHistoryService } from '../services/chatHistoryService'
 import './Settings.css'
 
 interface SettingsProps {
@@ -50,6 +51,8 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
   const [fontFamily, setFontFamily] = useState('')
   const [fontSize, setFontSize] = useState('')
   const [historyCleared, setHistoryCleared] = useState(false)
+  const [chatHistoryCleared, setChatHistoryCleared] = useState(false)
+  const [confirmClearChatHistory, setConfirmClearChatHistory] = useState(false)
   const [contextMode, setContextMode] = useState<ContextMode>('tree')
   const [contextMaxFiles, setContextMaxFiles] = useState('2000')
   const [provider, setProvider] = useState<LlmProvider>('gemini')
@@ -214,6 +217,14 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
     window.dispatchEvent(new Event('forger:recents-cleared'))
     setHistoryCleared(true)
     setTimeout(() => setHistoryCleared(false), 2000)
+  }
+
+  const handleClearChatHistory = () => {
+    chatHistoryService.clearAll()
+    window.dispatchEvent(new Event('forger:chat-history-cleared'))
+    setConfirmClearChatHistory(false)
+    setChatHistoryCleared(true)
+    setTimeout(() => setChatHistoryCleared(false), 2000)
   }
 
   return (
@@ -499,6 +510,26 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
             >
               {historyCleared ? `✓ ${t('Cleared')}` : t('Clear Recent History')}
             </button>
+            <p className="setting-description">
+              {t('Delete saved AI chat conversations for all projects. Project files and settings are kept.')}
+            </p>
+            {confirmClearChatHistory ? (
+              <div className="setting-actions">
+                <button className="clear-button" onClick={handleClearChatHistory}>
+                  {t('Confirm Clear')}
+                </button>
+                <button className="clear-button" onClick={() => setConfirmClearChatHistory(false)}>
+                  {t('Cancel')}
+                </button>
+              </div>
+            ) : (
+              <button
+                className="clear-button"
+                onClick={() => setConfirmClearChatHistory(true)}
+              >
+                {chatHistoryCleared ? `✓ ${t('Cleared')}` : t('Clear All Chat History')}
+              </button>
+            )}
           </div>
 
           {/* Nothing needs a manual Save for Ollama - every setting there

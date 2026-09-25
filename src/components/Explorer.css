@@ -270,7 +270,10 @@
   font-size: 13px;
 }
 
-.explorer-empty button {
+/* Direct-child buttons only - the Recent Projects list items are also
+   buttons but must keep their own colors (accent bg + dark text was
+   unreadable, worst in Quiet Light). */
+.explorer-empty > button {
   background: var(--accent);
   color: white;
   border: none;

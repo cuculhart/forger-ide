@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-09-25
+
+### Added
+
+- Chat history controls: clear the current project's conversation from the
+  Chat header, or delete saved conversations for every project from
+  Settings. Both destructive actions require confirmation; clearing all
+  histories also immediately resets the open Chat panel.
+
+### Fixed
+
+- Clearing all chat history no longer uses Electron's synchronous native
+  confirmation dialog, which left Settings controls unresponsive after it
+  closed. Destructive chat clears now use inline Confirm/Cancel controls.
+- Editor undo/redo (Edit menu and Ctrl+Z/Ctrl+Shift+Z) did nothing: when
+  the menu opened the editor lost text focus, so the handler fell back to
+  the native (DOM) undo, which cannot reach Monaco's undo stack. The
+  handler now calls `model.undo()/redo()` on the open file's model unless
+  focus is in another editable element.
+- AI file writes that wrapped the whole file in a markdown code fence
+  ("```md ... ```") are unwrapped before writing - the fence was being
+  saved literally, breaking markdown preview.
+- WRITE_FILE blocks where a small model used the closing "```" of a
+  wrapped body as the terminator (instead of "// END_WRITE_FILE") are now
+  salvaged instead of looping on "incomplete block" retries.
+- File-path arguments like "README.md (assuming you meant ...)" - prose
+  parentheses appended by small models - are cleaned before use, so they
+  no longer produce ENOENT reads of garbage filenames.
+- Command-like lines inside WRITE_FILE/EDIT_FILE bodies (e.g. a README's
+  own "// RUN_COMMAND:" example) are file content, not commands - they no
+  longer execute or trip the malformed/unknown-command checks.
+- The "code shown but not written" retry now fires for any response that
+  contains a code fence (previously only when the whole reply was one
+  fence) - models dodged the check by adding prose around the snippet.
+- Explorer empty state: the Recent Projects list items inherited the
+  accent-background button style, making them unreadable (dark text on
+  teal, worst in Quiet Light). The rule now targets only the direct
+  Open/New Project buttons.
+
+### Changed
+
+- Each open file now gets its own Monaco model (`path` + `keepCurrentModel`),
+  so undo history and cursor position survive markdown preview toggles
+  and file switches instead of being reset.
+- Privacy: the LLM no longer sees absolute paths. Project context
+  (file tree, selected/full-file contents) and command feedback
+  (READ_FILE/LIST_FILES/WRITE_FILE/EDIT_FILE results, RUN_COMMAND output)
+  use project-relative paths - previously `C:\Users\<name>\...` leaked
+  the OS user name to cloud providers.
+- The system prompt now names the host OS's browser opener directly
+  (`// RUN_COMMAND: xdg-open <target>` on Linux, `start`/`open`
+  elsewhere) instead of showing a three-OS table - small models were
+  listing the manual steps for every OS instead of emitting the command.
+
 ## [0.3.1] - 2026-09-25
 
 ### Added
@@ -26,6 +80,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Ollama endpoint/model) - it deleted the entire in-memory config.
 - `// END_READ_FILE`-style invented terminators no longer trigger the
   "unknown command" retry; only invented openers do.
+- Two more small-model misfires now trigger a corrective retry instead of
+  ending the turn: a file-creation request answered with only a markdown
+  code fence (never written to disk), and the model parroting the app's
+  own "Command execution results:" wrapper as its reply.
 
 ## [0.3.0] - 2026-09-24
 

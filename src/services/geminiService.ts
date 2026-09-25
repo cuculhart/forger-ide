@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
 import { configService } from './configService'
-import { APP_CONTEXT_PROMPT, AGENT_INSTRUCTIONS, NO_PROJECT_INSTRUCTIONS, hostOsName } from './agentPrompt'
+import { APP_CONTEXT_PROMPT, AGENT_INSTRUCTIONS, NO_PROJECT_INSTRUCTIONS, hostOsName, hostOpenCommand } from './agentPrompt'
 import { projectService } from './projectService'
 
 export class GeminiService {
@@ -314,13 +314,15 @@ export class GeminiService {
       
       // Host-app identity so the model answers for THIS editor, not VS Code
       prompt += APP_CONTEXT_PROMPT
-      prompt += `\nThe app runs on ${hostOsName()}.\n`
+      const projectOpen = !!projectService.getCurrentProject()?.isOpen
+      prompt += `\nThe app runs on ${hostOsName()}.`
+      prompt += projectOpen
+        ? ` To open a file/URL in the browser, emit "// RUN_COMMAND: ${hostOpenCommand()} <target>".\n`
+        : '\n'
 
       // Add instruction for file operations using simple commands - or warn
       // that they are unavailable when no project is open
-      prompt += projectService.getCurrentProject()?.isOpen
-        ? AGENT_INSTRUCTIONS
-        : NO_PROJECT_INSTRUCTIONS
+      prompt += projectOpen ? AGENT_INSTRUCTIONS : NO_PROJECT_INSTRUCTIONS
 
       // Build conversation history for Gemini
       const contents = []

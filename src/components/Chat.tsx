@@ -58,7 +58,7 @@ function resolveFilePath(inputPath: string): { path?: string; error?: string } {
 
   const normalized = trimmed.replace(/\\/g, '/')
   if (!normalized.toLowerCase().startsWith(root.toLowerCase() + '/')) {
-    return { error: `Path "${trimmed}" is outside the project root (${project.rootPath}).` }
+    return { error: `Path "${trimmed}" is outside the project root.` }
   }
   return { path: trimmed }
 }
@@ -120,6 +120,37 @@ interface CommandExecutionResult {
   checkpoint?: { path: string; prevContent: string; existed: boolean }[]
 }
 
+// Small models sometimes wrap the whole file body in a markdown code fence
+// ("```md\n...\n```"), which would be written to disk literally and render
+// the file as one giant code block. If the body starts with a fence line,
+// everything up to the last bare "```" line is unwrapped - trailing prose
+// after it is dropped. Inner fences must pair up, otherwise the fence is
+// real content and the body is kept as-is.
+function unwrapFenceBody(body: string): { content: string; end: number } | null {
+  const open = body.match(/^(?:[ \t]*\r?\n)*[ \t]*```[\w+-]*[ \t]*\r?\n/)
+  if (!open) return null
+  const closes = [...body.matchAll(/^[ \t]*```[ \t]*\r?$/gm)]
+  const lastClose = closes[closes.length - 1]
+  if (!lastClose || lastClose.index! <= open[0].length) return null
+  const content = body.slice(open[0].length, lastClose.index)
+  if (((content.match(/^[ \t]*```[^\n]*$/gm) ?? []).length) % 2 !== 0) return null
+  let end = lastClose.index! + lastClose[0].length
+  if (body[end] === '\n') end++
+  return { content, end }
+}
+
+// Drop trailing "(...)" prose small models append to file paths
+// ("README.md (assuming you meant...)"). Keeps parens that look like part
+// of the name itself ("report (final)" stays - fewer than 3 words and no
+// filler phrasing).
+function cleanPathArg(arg: string): string {
+  return arg.replace(/[ \t]+\(([^()]*)\)[ \t]*$/, (m, inner) =>
+    inner.trim().split(/\s+/).length >= 3 ||
+    /\b(or|assuming|note|e\.g|i\.e|if|you|this|that|instead|since|because)\b/i.test(inner)
+      ? '' : m
+  )
+}
+
 // Find file commands embedded in the AI response
 function findFileCommands(response: string): FileCommand[] {
   const commands: FileCommand[] = []
@@ -129,24 +160,37 @@ function findFileCommands(response: string): FileCommand[] {
   // with another language's comment marker ("# END_WRITE_FILE") - tolerate both.
   const writeFileRegex = /\/\/ WRITE_FILE[ \t]*:?[ \t]*([^\n]+?)\n([\s\S]*?)(?:\/\/|#|--)[ \t]*END_WRITE_FILE/g
   while ((match = writeFileRegex.exec(response)) !== null) {
-    commands.push({ type: 'write', arg: match[1].trim(), body: match[2], start: match.index, end: match.index + match[0].length })
+    const unwrapped = unwrapFenceBody(match[2])
+    commands.push({ type: 'write', arg: cleanPathArg(match[1].trim()), body: unwrapped?.content ?? match[2], start: match.index, end: match.index + match[0].length })
+  }
+
+  // Salvage: a WRITE_FILE opener whose body is a code fence but that never
+  // got "// END_WRITE_FILE" - small models treat the closing ``` as the
+  // terminator. Only openers not already inside a parsed command are tried.
+  const writeOpenRegex = /\/\/ WRITE_FILE[ \t]*:?[ \t]*([^\n]+?)\r?\n/g
+  while ((match = writeOpenRegex.exec(response)) !== null) {
+    const start = match.index
+    if (commands.some(c => start >= c.start && start < c.end)) continue
+    const unwrapped = unwrapFenceBody(response.slice(start + match[0].length))
+    if (!unwrapped) continue
+    commands.push({ type: 'write', arg: cleanPathArg(match[1].trim()), body: unwrapped.content, start, end: start + match[0].length + unwrapped.end })
   }
 
   const editFileRegex = /\/\/ EDIT_FILE[ \t]*:?[ \t]*([^\n]+?)\n([\s\S]*?)(?:\/\/|#|--)[ \t]*END_EDIT_FILE/g
   while ((match = editFileRegex.exec(response)) !== null) {
-    commands.push({ type: 'edit', arg: match[1].trim(), body: match[2], start: match.index, end: match.index + match[0].length })
+    commands.push({ type: 'edit', arg: cleanPathArg(match[1].trim()), body: match[2], start: match.index, end: match.index + match[0].length })
   }
 
   // The AI sometimes puts several commands on one line ("// READ_FILE: a// LIST_FILES: b"),
   // so the path argument ends at the next "//" command or the end of the line.
   const readFileRegex = /\/\/ READ_FILE[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = readFileRegex.exec(response)) !== null) {
-    commands.push({ type: 'read', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
+    commands.push({ type: 'read', arg: cleanPathArg(match[1].trim()), start: match.index, end: match.index + match[0].length })
   }
 
   const listFilesRegex = /\/\/ LIST_FILES[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = listFilesRegex.exec(response)) !== null) {
-    commands.push({ type: 'list', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
+    commands.push({ type: 'list', arg: cleanPathArg(match[1].trim()), start: match.index, end: match.index + match[0].length })
   }
 
   const runCommandRegex = /\/\/ RUN_COMMAND[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
@@ -161,10 +205,16 @@ function findFileCommands(response: string): FileCommand[] {
 
   const findFilesRegex = /\/\/ FIND_FILES[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = findFilesRegex.exec(response)) !== null) {
-    commands.push({ type: 'find', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
+    commands.push({ type: 'find', arg: cleanPathArg(match[1].trim()), start: match.index, end: match.index + match[0].length })
   }
 
-  return commands.sort((a, b) => a.start - b.start)
+  // A command-like line inside a WRITE_FILE/EDIT_FILE body is file content,
+  // not a command (e.g. "// RUN_COMMAND:" examples inside a README's code
+  // block must not execute).
+  const blocks = commands.filter(c => c.type === 'write' || c.type === 'edit')
+  return commands
+    .filter(c => !blocks.some(b => c !== b && c.start >= b.start && c.start < b.end))
+    .sort((a, b) => a.start - b.start)
 }
 
 // Parse Aider-style SEARCH/REPLACE blocks inside an EDIT_FILE body
@@ -229,15 +279,23 @@ async function parseAndExecuteFileCommands(
 ): Promise<CommandExecutionResult> {
   const commands = findFileCommands(response)
 
+  // Text inside WRITE_FILE/EDIT_FILE blocks is file content, not commands -
+  // mask it so mentions like "// WRITE_FILE:" in a README don't trigger the
+  // malformed/invented checks.
+  const scanText = commands.reduce((s, c) =>
+    (c.type === 'write' || c.type === 'edit')
+      ? s.slice(0, c.start) + ' '.repeat(c.end - c.start) + s.slice(c.end)
+      : s, response)
+
   // Small models sometimes open a WRITE_FILE/EDIT_FILE block but close it
   // with the wrong terminator (e.g. // END_EDIT_FILE) or none at all. The
   // block then parses as nothing and would be silently shown as raw text -
   // report it back so the model can re-emit a complete block.
   const malformedBlocks: string[] = []
-  if (/\/\/ WRITE_FILE\b/.test(response) && !commands.some(c => c.type === 'write')) {
+  if (/\/\/ WRITE_FILE\b/.test(scanText) && !commands.some(c => c.type === 'write')) {
     malformedBlocks.push('WRITE_FILE')
   }
-  if (/\/\/ EDIT_FILE\b/.test(response) && !commands.some(c => c.type === 'edit')) {
+  if (/\/\/ EDIT_FILE\b/.test(scanText) && !commands.some(c => c.type === 'edit')) {
     malformedBlocks.push('EDIT_FILE')
   }
 
@@ -249,7 +307,7 @@ async function parseAndExecuteFileCommands(
     'GREP', 'FIND_FILES', 'END_WRITE_FILE', 'END_EDIT_FILE',
   ])
   const inventedCmds = [...new Set(
-    (response.match(/^\/\/[ \t]*[A-Z][A-Z0-9_.-]*(?=[ \t:]|$)/gm) ?? [])
+    (scanText.match(/^\/\/[ \t]*[A-Z][A-Z0-9_.-]*(?=[ \t:]|$)/gm) ?? [])
       .map(m => m.replace(/^\/\/[ \t]*/, '').replace(/[ \t:].*$/, '').trim())
       .filter(name => (name.includes('_') || name.includes('.'))
         && !KNOWN_COMMAND_NAMES.has(name)
@@ -258,7 +316,17 @@ async function parseAndExecuteFileCommands(
         && !name.startsWith('END_'))
   )]
 
-  if (commands.length === 0 && malformedBlocks.length === 0 && inventedCmds.length === 0) {
+  // Two more small-model failure modes worth retrying instead of showing raw:
+  // (a) the model echoes the app's own "Command execution results:" wrapper
+  //     as if it were the app, and
+  // (b) it answers a file-creation request by showing a markdown code fence
+  //     (with or without prose), which never reaches the disk.
+  const echoingResults = /^\s*Command execution results:/.test(response)
+  const hasFence = response.includes('```')
+  const creationIntent = /(作成|作って|作る|生成|実装|create|write|generate|make|build)/i.test(userText)
+
+  if (commands.length === 0 && malformedBlocks.length === 0 && inventedCmds.length === 0
+    && !echoingResults && !(creationIntent && hasFence)) {
     return { display: response, feedback: [], needsContinuation: false }
   }
   if (!window.electronAPI) {
@@ -284,6 +352,20 @@ async function parseAndExecuteFileCommands(
       'Valid commands are "// WRITE_FILE:", "// EDIT_FILE:", "// READ_FILE:", "// LIST_FILES:", "// GREP:", "// FIND_FILES:", "// RUN_COMMAND:" ' +
       '(WRITE_FILE/EDIT_FILE blocks close with "// END_WRITE_FILE" / "// END_EDIT_FILE"). ' +
       'To create a file, emit "// WRITE_FILE: <file_path>", the content, then "// END_WRITE_FILE".'
+    )
+    needsContinuation = true
+  }
+  if (echoingResults) {
+    feedback.push(
+      'The "Command execution results:" block is generated by the app, not by you - do not repeat it. ' +
+      'Respond as the assistant: emit the corrected file command or answer the user.'
+    )
+    needsContinuation = true
+  }
+  if (commands.length === 0 && creationIntent && hasFence) {
+    feedback.push(
+      'You showed code inside a markdown code fence - that never writes to disk. ' +
+      'Emit "// WRITE_FILE: <file_path>", the content, then "// END_WRITE_FILE".'
     )
     needsContinuation = true
   }
@@ -375,16 +457,16 @@ async function parseAndExecuteFileCommands(
         if (result.success) {
           console.log(`File read: ${filePath}`)
           notes[i] = `📖 ${i18nService.t('Read file')}: ${filePath}`
-          feedback.push(`READ_FILE ${filePath} result:\n${result.content}`)
+          feedback.push(`READ_FILE ${pathRelativeToRoot(filePath)} result:\n${result.content}`)
         } else {
           console.error(`Failed to read file: ${filePath}`, result.error)
           notes[i] = `⚠️ ${i18nService.t('Error reading file')} ${filePath}: ${result.error}`
-          feedback.push(`READ_FILE ${filePath}: failed - ${result.error}`)
+          feedback.push(`READ_FILE ${pathRelativeToRoot(filePath)}: failed - ${result.error}`)
         }
       } catch (error) {
         console.error(`Error reading file: ${filePath}`, error)
         notes[i] = `⚠️ ${i18nService.t('Error reading file')} ${filePath}: ${error}`
-        feedback.push(`READ_FILE ${filePath}: failed - ${error}`)
+        feedback.push(`READ_FILE ${pathRelativeToRoot(filePath)}: failed - ${error}`)
       }
     } else {
       needsContinuation = true
@@ -397,16 +479,16 @@ async function parseAndExecuteFileCommands(
           const fileList = result.items.map((item: any) =>
             `${item.isDirectory ? 'DIR' : 'FILE'}: ${item.name}`
           ).join('\n')
-          feedback.push(`LIST_FILES ${directoryPath} result:\n${fileList}`)
+          feedback.push(`LIST_FILES ${pathRelativeToRoot(directoryPath)} result:\n${fileList}`)
         } else {
           console.error(`Failed to list files: ${directoryPath}`, result.error)
           notes[i] = `⚠️ ${i18nService.t('Error listing files')} ${directoryPath}: ${result.error}`
-          feedback.push(`LIST_FILES ${directoryPath}: failed - ${result.error}`)
+          feedback.push(`LIST_FILES ${pathRelativeToRoot(directoryPath)}: failed - ${result.error}`)
         }
       } catch (error) {
         console.error(`Error listing files: ${directoryPath}`, error)
         notes[i] = `⚠️ ${i18nService.t('Error listing files')} ${directoryPath}: ${error}`
-        feedback.push(`LIST_FILES ${directoryPath}: failed - ${error}`)
+        feedback.push(`LIST_FILES ${pathRelativeToRoot(directoryPath)}: failed - ${error}`)
       }
     }
   }
@@ -475,7 +557,7 @@ async function parseAndExecuteFileCommands(
       const label = item.kind === 'write' ? 'WRITE_FILE' : 'EDIT_FILE'
       if (!approvedSet.has(edit)) {
         notes[item.index] = `⏭️ ${i18nService.t('Skipped (rejected by user)')}: ${item.path}`
-        feedback.push(`${label} ${item.path}: rejected by user`)
+        feedback.push(`${label} ${pathRelativeToRoot(item.path)}: rejected by user`)
         needsContinuation = true
         continue
       }
@@ -488,7 +570,7 @@ async function parseAndExecuteFileCommands(
         notes[item.index] = item.kind === 'write'
           ? `✅ ${i18nService.t('Wrote file')}: ${item.path}`
           : `✅ ${i18nService.t('Edited file')}: ${item.path}`
-        feedback.push(`${label} ${item.path}: success`)
+        feedback.push(`${label} ${pathRelativeToRoot(item.path)}: success`)
 
         // Emit event to refresh explorer (and editor if the file is open)
         window.dispatchEvent(new CustomEvent('file-created', {
@@ -497,7 +579,7 @@ async function parseAndExecuteFileCommands(
       } catch (error) {
         console.error(`Error writing file: ${item.path}`, error)
         notes[item.index] = `⚠️ ${i18nService.t('Error writing file')} ${item.path}: ${error}`
-        feedback.push(`${label} ${item.path}: failed - ${error}`)
+        feedback.push(`${label} ${pathRelativeToRoot(item.path)}: failed - ${error}`)
         needsContinuation = true
       }
     }
@@ -517,7 +599,14 @@ async function parseAndExecuteFileCommands(
       }
       try {
         const result = await runCommandAndWait(r.command)
-        const tail = stripAnsi(result.output).slice(-8000) // errors usually appear at the end
+        // Strip the project root from output before feeding it to the model -
+        // absolute paths would leak the OS user name to cloud providers.
+        const runRoot = projectService.getCurrentProject()?.rootPath
+          .replace(/\\/g, '/').replace(/\/+$/, '') ?? ''
+        const rootPattern = escapeRegExp(runRoot).replace(/\//g, '[/\\\\]')
+        const rawTail = stripAnsi(result.output)
+        const tail = (runRoot ? rawTail.replace(new RegExp(rootPattern, 'gi'), '.') : rawTail)
+          .slice(-8000) // errors usually appear at the end
         const statusText = result.opened
           ? i18nService.t('opened')
           : result.timedOut
@@ -561,6 +650,12 @@ async function parseAndExecuteFileCommands(
   if (inventedCmds.length > 0) {
     display += `\n\n⚠️ ${i18nService.t('Unknown command - asking the model to retry')}`
   }
+  if (echoingResults) {
+    display += `\n\n⚠️ ${i18nService.t('Result block imitated - asking the model to retry')}`
+  }
+  if (commands.length === 0 && creationIntent && hasFence) {
+    display += `\n\n⚠️ ${i18nService.t('Code shown but not written - asking the model to retry')}`
+  }
 
   return { display: display.trim(), feedback, needsContinuation, checkpoint }
 }
@@ -597,6 +692,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   // Stack of pre-write snapshots - each entry rolls back one AI write batch
   const checkpointsRef = useRef<{ path: string; prevContent: string; existed: boolean }[][]>([])
   const [canRollback, setCanRollback] = useState(false)
+  const [confirmClearChat, setConfirmClearChat] = useState(false)
 
   const handleRollback = async () => {
     const cp = checkpointsRef.current.pop()
@@ -661,6 +757,27 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
     commandResolverRef.current = null
     setPendingCommands(null)
   }
+
+  const clearCurrentChat = () => {
+    abortController?.abort()
+    resolveApproval(null)
+    resolveCommandApproval(null)
+    streamedRef.current = ''
+    setStreamingText(null)
+    setMessages([])
+    if (projectPath) chatHistoryService.clearConversation(projectPath)
+  }
+
+  const handleClearChat = () => {
+    clearCurrentChat()
+    setConfirmClearChat(false)
+  }
+
+  useEffect(() => {
+    const handleClearAll = () => clearCurrentChat()
+    window.addEventListener('forger:chat-history-cleared', handleClearAll)
+    return () => window.removeEventListener('forger:chat-history-cleared', handleClearAll)
+  }, [abortController, projectPath])
 
   const handleRejectOneCommand = (command: string) => {
     if (!pendingCommands) return
@@ -853,7 +970,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
         const projectContext = await projectService.getProjectContext()
         const project = projectService.getCurrentProject()
         if (project && project.isOpen) {
-          const header = `Project: ${project.name}\nProject root: ${project.rootPath}`
+          const header = `Project: ${project.name}\nAll file paths below are relative to the project root.`
           context = projectContext.length > 0 ? `${header}\n\n${projectContext}` : header
         } else {
           context = projectContext.length > 0 ? projectContext : undefined
@@ -903,6 +1020,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
         const response = await llmService.sendMessage(currentInput, context, historyForRequest, onDelta, controller.signal, llmPin)
         const latencyMs = Math.round(performance.now() - callStart)
         const { display, feedback, needsContinuation, checkpoint } = await parseAndExecuteFileCommands(response, requestApproval, requestCommandApproval, runCommandAndWait, userMessage.content)
+        if (controller.signal.aborted) break
         setStreamingText(null)
         if (checkpoint && checkpoint.length > 0) {
           checkpointsRef.current.push(checkpoint)
@@ -948,6 +1066,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
         const summary = await llmService.sendMessage(summaryInput, context, historyForRequest, onSummaryDelta, controller.signal, llmPin)
         const summaryLatencyMs = Math.round(performance.now() - summaryStart)
         const { display: summaryDisplay } = await parseAndExecuteFileCommands(summary, requestApproval, requestCommandApproval, runCommandAndWait, userMessage.content)
+        if (controller.signal.aborted) return
         setStreamingText(null)
         const summaryText = summaryDisplay || getSummaryStreamed()
         if (summaryText) {
@@ -1018,18 +1137,39 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
             </span>
           )}
         </div>
-        {canRollback && (
-          <button
-            className="rollback-button"
-            onClick={handleRollback}
-            title={t('Undo the last AI file changes')}
-          >
-            ↩ {t('Rollback')}
+        <div className="chat-header-actions">
+          {canRollback && (
+            <button
+              className="rollback-button"
+              onClick={handleRollback}
+              title={t('Undo the last AI file changes')}
+            >
+              ↩ {t('Rollback')}
+            </button>
+          )}
+          {confirmClearChat ? (
+            <>
+              <button className="clear-chat-button" onClick={handleClearChat}>
+                {t('Confirm Clear')}
+              </button>
+              <button className="clear-chat-button" onClick={() => setConfirmClearChat(false)}>
+                {t('Cancel')}
+              </button>
+            </>
+          ) : (
+            <button
+              className="clear-chat-button"
+              onClick={() => setConfirmClearChat(true)}
+              disabled={messages.length === 0}
+              title={t('Clear this conversation')}
+            >
+              {t('Clear')}
+            </button>
+          )}
+          <button className="settings-button" onClick={onOpenSettings} title={t('Settings')}>
+            ⚙️
           </button>
-        )}
-        <button className="settings-button" onClick={onOpenSettings} title={t('Settings')}>
-          ⚙️
-        </button>
+        </div>
       </div>
       <div className="chat-messages">
         {messages.length === 0 && (
