@@ -35,7 +35,14 @@ module.exports = {
       name: '@electron-forge/maker-deb',
       config: {
         options: {
+          // Packaged binary is named after productName ("Forger"), not the
+          // npm package name that maker-deb looks for by default
+          bin: 'Forger',
           icon: 'assets/icon.png',
+          homepage: 'https://github.com/cuculhart/forger-ide',
+          section: 'devel',
+          genericName: 'AI Coding Assistant',
+          categories: ['Development', 'IDE'],
         },
       },
     },
