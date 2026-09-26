@@ -5,7 +5,36 @@ All notable changes to Forger are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.4.0] - 2026-09-26
+
+### Added
+
+- Open the current project's root folder in the OS file manager from the
+  Explorer header (↗) or File > Open Project Folder. Uses Electron's
+  shell integration, so no per-OS or per-distro command is needed.
+- Git setup dialogs: clone a repository from the Open Project dialog or
+  into an empty open project folder, add or update remotes, create the
+  initial commit, push a branch with upstream tracking, and configure
+  `user.name` / `user.email` globally or for the current repository. The
+  toolbar Push action also configures upstream automatically when the
+  target remote is unambiguous.
+
+### Fixed
+
+- Terminal output and chat messages now stay pinned to the bottom while the
+  user is already there. Scrolling up pauses auto-follow (so history can be
+  read without being yanked down); sending a message or opening the panel
+  resumes it. Terminal's default height was raised, its scroll body can
+  shrink correctly, and its header/input rows no longer collapse when space
+  is tight. The editor is also explicitly relaid out when the terminal is
+  shown or resized, and editor overflow is clipped at the pane boundary,
+  fixing the first-show header clipping that previously needed a manual
+  pane resize.
+- Browser-open RUN_COMMAND approval no longer shows or runs prose glued to
+  the target by small models (for example
+  `xdg-open start index.html[result message]`); recognizable opener
+  commands are normalized to the host opener plus URL/file target, while
+  unrelated shell commands are left unchanged.
 
 ## [0.3.2] - 2026-09-25
 

@@ -434,7 +434,10 @@ function setupIpcHandlers() {
     try {
       const git = simpleGit(repoPath)
       const status = await git.status()
-      return { success: true, status: cloneable(status) }
+      const hasCommits = await git.revparse(['--verify', 'HEAD'])
+        .then(() => true)
+        .catch(() => false)
+      return { success: true, status: cloneable(status), hasCommits }
     } catch (error) {
       return { success: false, error: error.message }
     }
@@ -470,10 +473,29 @@ function setupIpcHandlers() {
     }
   })
 
+  const validRemoteName = (name) => /^[A-Za-z0-9._-]+$/.test(name || '')
+  const validGitArg = (value) => typeof value === 'string' && value.trim() && !value.startsWith('-')
+  const validBranchName = (name) => validGitArg(name) && !/\s/.test(name)
+
   ipcMain.handle('git-push', async (event, repoPath) => {
     try {
       const git = simpleGit(repoPath)
-      await git.push()
+      const status = await git.status()
+      if (status.tracking) {
+        await git.push()
+        return { success: true }
+      }
+      const branch = String(status.current || '').trim()
+      if (!validBranchName(branch)) {
+        return { success: false, error: 'No current branch to push' }
+      }
+      const remotes = await git.getRemotes(false)
+      const remote = remotes.find(item => item.name === 'origin')
+        || (remotes.length === 1 ? remotes[0] : null)
+      if (!remote || !validRemoteName(remote.name)) {
+        return { success: false, error: 'No upstream remote configured. Use Remote Setup.' }
+      }
+      await git.raw(['push', '--set-upstream', remote.name, branch])
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }
@@ -484,6 +506,103 @@ function setupIpcHandlers() {
     try {
       const git = simpleGit(repoPath)
       await git.pull()
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git-clone', async (event, repoUrl, targetPath) => {
+    try {
+      const url = String(repoUrl || '').trim()
+      if (!validGitArg(url)) return { success: false, error: 'Invalid repository URL' }
+      if (!validGitArg(targetPath)) return { success: false, error: 'Invalid target path' }
+      await simpleGit().clone(url, targetPath)
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git-remotes', async (event, repoPath) => {
+    try {
+      const remotes = await simpleGit(repoPath).getRemotes(true)
+      return { success: true, remotes: cloneable(remotes) }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git-set-remote', async (event, repoPath, name, repoUrl) => {
+    try {
+      const remote = String(name || '').trim()
+      const url = String(repoUrl || '').trim()
+      if (!validRemoteName(remote)) return { success: false, error: 'Invalid remote name' }
+      if (!validGitArg(url)) return { success: false, error: 'Invalid repository URL' }
+      const git = simpleGit(repoPath)
+      const remotes = await git.getRemotes(false)
+      if (remotes.some(item => item.name === remote)) {
+        await git.remote(['set-url', remote, url])
+      } else {
+        await git.addRemote(remote, url)
+      }
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git-push-upstream', async (event, repoPath, remote, branch) => {
+    try {
+      const remoteName = String(remote || '').trim()
+      const branchName = String(branch || '').trim()
+      if (!validRemoteName(remoteName)) return { success: false, error: 'Invalid remote name' }
+      if (!validBranchName(branchName)) return { success: false, error: 'Invalid branch name' }
+      await simpleGit(repoPath).raw(['push', '--set-upstream', remoteName, branchName])
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git-config-get', async (event, repoPath, scope) => {
+    try {
+      if (scope !== 'local' && scope !== 'global') {
+        return { success: false, error: 'Invalid config scope' }
+      }
+      const git = simpleGit(repoPath)
+      const readKey = async (key) => {
+        try {
+          const result = await git.getConfig(key, scope)
+          return result.value || ''
+        } catch {
+          return ''
+        }
+      }
+      return {
+        success: true,
+        config: {
+          name: await readKey('user.name'),
+          email: await readKey('user.email'),
+        },
+      }
+    } catch (error) {
+      return { success: false, error: error.message }
+    }
+  })
+
+  ipcMain.handle('git-config-set', async (event, repoPath, scope, values) => {
+    try {
+      if (scope !== 'local' && scope !== 'global') {
+        return { success: false, error: 'Invalid config scope' }
+      }
+      const git = simpleGit(repoPath)
+      const name = String(values?.name || '').trim()
+      const email = String(values?.email || '').trim()
+      if (!name) return { success: false, error: 'user.name is required' }
+      if (!email) return { success: false, error: 'user.email is required' }
+      await git.addConfig('user.name', name, false, scope)
+      await git.addConfig('user.email', email, false, scope)
       return { success: true }
     } catch (error) {
       return { success: false, error: error.message }

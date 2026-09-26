@@ -29,9 +29,11 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
   const [contextStats, setContextStats] = useState<any>(null)
   const [recentProjects, setRecentProjects] = useState<RecentProject[]>([])
   const [openError, setOpenError] = useState<string | null>(null)
-  const [dialogMode, setDialogMode] = useState<'open' | 'create'>('open')
+  const [dialogMode, setDialogMode] = useState<'open' | 'create' | 'clone'>('open')
   const [newProjectName, setNewProjectName] = useState('')
   const [newProjectParent, setNewProjectParent] = useState('')
+  const [cloneUrl, setCloneUrl] = useState('')
+  const [dialogBusy, setDialogBusy] = useState(false)
   const [newItem, setNewItem] = useState<{ parentPath: string; type: 'file' | 'dir'; depth: number } | null>(null)
   const [newItemName, setNewItemName] = useState('')
 
@@ -155,8 +157,14 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
         case 'new-project':
           a.openDialog('create')
           break
+        case 'clone-project':
+          a.openDialog('clone')
+          break
         case 'close-project':
           if (project?.isOpen) a.handleCloseProject()
+          break
+        case 'open-project-folder':
+          if (project?.isOpen) openProjectFolder()
           break
         case 'new-file':
           if (project?.isOpen) a.startNewItem(project.rootPath, 'file', 0)
@@ -262,6 +270,45 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
       await openProjectByPath(projectPath)
     } else {
       setOpenError(result.error || t('Failed to create project folder'))
+    }
+  }
+
+  const inferredCloneName = (url: string) => {
+    const lastPart = url.trim()
+      .replace(/[?#].*$/, '')
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || ''
+    return lastPart.replace(/\.git$/i, '').replace(/[\\/:*?"<>|]/g, '-')
+  }
+
+  const handleCloneUrlChange = (url: string) => {
+    setCloneUrl(url)
+    if (!newProjectName) setNewProjectName(inferredCloneName(url))
+  }
+
+  const handleCloneProject = async () => {
+    const name = newProjectName.trim()
+    if (!name || !newProjectParent || !cloneUrl.trim() || !window.electronAPI) return
+    if (/[\\/:*?"<>|]/.test(name)) {
+      setOpenError(t('Project name contains invalid characters') + ': \\ / : * ? " < > |')
+      return
+    }
+    const projectPath = `${newProjectParent.replace(/[\\/]+$/, '')}/${name}`
+    setDialogBusy(true)
+    setOpenError(null)
+    try {
+      const result = await window.electronAPI.gitClone(cloneUrl.trim(), projectPath)
+      if (result.success) {
+        setNewProjectName('')
+        setCloneUrl('')
+        setDialogMode('open')
+        await openProjectByPath(projectPath)
+      } else {
+        setOpenError(result.error || t('Git operation failed'))
+      }
+    } finally {
+      setDialogBusy(false)
     }
   }
 
@@ -479,13 +526,22 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
     )
   }
 
-  const openDialog = (mode: 'open' | 'create') => {
+  const openDialog = (mode: 'open' | 'create' | 'clone') => {
     setDialogMode(mode)
-    if (mode === 'create') {
+    if (mode === 'create' || mode === 'clone') {
       setNewProjectParent(localStorage.getItem('last_parent_dir') || '')
+      setNewProjectName('')
     }
+    if (mode === 'clone') setCloneUrl('')
     setOpenError(null)
     setShowProjectDialog(true)
+  }
+
+  const openProjectFolder = async () => {
+    const project = projectService.getCurrentProject()
+    if (!project?.isOpen || !window.electronAPI?.openPath) return
+    const result = await window.electronAPI.openPath(project.rootPath, '.')
+    if (!result.success) console.error('Failed to open project folder:', result.error)
   }
 
   const rootPath = projectService.getCurrentProject()?.rootPath
@@ -513,6 +569,13 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
                   title={t('New Folder')}
                 >
                   📁+
+                </button>
+                <button
+                  className="new-item-button"
+                  onClick={openProjectFolder}
+                  title={t('Open Project Folder')}
+                >
+                  ↗
                 </button>
                 <button
                   className={`context-mode-button ${useAutoContext ? 'active' : ''}`}
@@ -563,11 +626,12 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
                 {openError && <p className="open-error">{openError}</p>}
                 <div className="dialog-actions">
                   <button onClick={handleOpenProject}>{t('Select Folder')}</button>
-                  <button onClick={() => setDialogMode('create')}>{t('New Project')}</button>
+                  <button onClick={() => openDialog('clone')}>{t('Clone Repository')}</button>
+                  <button onClick={() => openDialog('create')}>{t('New Project')}</button>
                   <button onClick={() => setShowProjectDialog(false)}>{t('Cancel')}</button>
                 </div>
               </>
-            ) : (
+            ) : dialogMode === 'create' ? (
               <>
                 <h4>{t('New Project')}</h4>
                 <input
@@ -590,6 +654,38 @@ const Explorer: React.FC<ExplorerProps> = ({ onFileSelect, onProjectChange }) =>
                     {t('Create & Open')}
                   </button>
                   <button onClick={() => setDialogMode('open')}>{t('Back')}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h4>{t('Clone Repository')}</h4>
+                <input
+                  autoFocus
+                  className="dialog-input"
+                  placeholder={t('Repository URL')}
+                  value={cloneUrl}
+                  onChange={(e) => handleCloneUrlChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCloneProject() }}
+                />
+                <input
+                  className="dialog-input"
+                  placeholder={t('Project name')}
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleCloneProject() }}
+                />
+                <button className="parent-folder-button" onClick={handleSelectParent} disabled={dialogBusy}>
+                  {newProjectParent ? `📁 ${newProjectParent}` : `📁 ${t('Choose parent folder...')}`}
+                </button>
+                {openError && <p className="open-error">{openError}</p>}
+                <div className="dialog-actions">
+                  <button
+                    onClick={handleCloneProject}
+                    disabled={dialogBusy || !cloneUrl.trim() || !newProjectName.trim() || !newProjectParent}
+                  >
+                    {t('Clone & Open')}
+                  </button>
+                  <button onClick={() => openDialog('open')} disabled={dialogBusy}>{t('Back')}</button>
                 </div>
               </>
             )}

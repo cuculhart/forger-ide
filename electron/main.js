@@ -51,9 +51,17 @@ function buildMenu() {
           click: () => sendMenuAction('open-project'),
         },
         {
+          label: 'Clone Repository...',
+          click: () => sendMenuAction('clone-project'),
+        },
+        {
           label: 'New Project...',
           accelerator: 'CmdOrCtrl+Shift+N',
           click: () => sendMenuAction('new-project'),
+        },
+        {
+          label: 'Open Project Folder',
+          click: () => sendMenuAction('open-project-folder'),
         },
         { type: 'separator' },
         {

@@ -31,8 +31,11 @@ const ProcessOutput: React.FC<{
   onKill: (id: string) => void
   getBuffer: (id: string) => string
   registerTerm: (id: string, term: Terminal | null) => void
-}> = ({ proc, onKill, getBuffer, registerTerm }) => {
+  visible: boolean
+}> = ({ proc, onKill, getBuffer, registerTerm, visible }) => {
   const hostRef = useRef<HTMLDivElement>(null)
+  const termRef = useRef<Terminal | null>(null)
+  const fitRef = useRef<FitAddon | null>(null)
 
   useEffect(() => {
     const host = hostRef.current
@@ -54,6 +57,8 @@ const ProcessOutput: React.FC<{
     term.loadAddon(links)
     term.open(host)
     term.write(getBuffer(proc.id))
+    termRef.current = term
+    fitRef.current = fit
     registerTerm(proc.id, term)
     try {
       fit.fit()
@@ -76,11 +81,28 @@ const ProcessOutput: React.FC<{
       dataSub.dispose()
       resizeSub.dispose()
       observer.disconnect()
+      termRef.current = null
+      fitRef.current = null
       registerTerm(proc.id, null)
       term.dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proc.id])
+
+  useEffect(() => {
+    if (!visible) return
+    const frame = requestAnimationFrame(() => {
+      try {
+        fitRef.current?.fit()
+        const term = termRef.current
+        if (term) {
+          window.electronAPI?.resizeProcess(proc.id, term.cols, term.rows)
+          term.scrollToBottom()
+        }
+      } catch { }
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [visible, proc.id])
 
   return (
     <div className="terminal-process">
@@ -113,6 +135,9 @@ const TerminalPanel: React.FC<{ visible: boolean; height: number }> = ({ visible
   // Raw PTY output per process - source of truth for xterm replay on remount
   const outputBuffers = useRef(new Map<string, string>())
   const terms = useRef(new Map<string, Terminal>())
+  const bodyRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
+  const processCountRef = useRef(0)
 
   const cwd = projectService.getCurrentProject()?.rootPath
 
@@ -121,13 +146,28 @@ const TerminalPanel: React.FC<{ visible: boolean; height: number }> = ({ visible
     if (term) terms.current.set(id, term)
     else terms.current.delete(id)
   }, [])
+  const scrollBodyToBottom = useCallback(() => {
+    const body = bodyRef.current
+    if (body) body.scrollTop = body.scrollHeight
+  }, [])
+  const handleBodyScroll = () => {
+    const body = bodyRef.current
+    if (!body) return
+    stickToBottomRef.current = body.scrollHeight - body.scrollTop - body.clientHeight < 24
+  }
 
   useEffect(() => {
     const api = window.electronAPI
     if (!api) return
     const offOutput = api.onTerminalOutput(({ id, data }) => {
       outputBuffers.current.set(id, ((outputBuffers.current.get(id) || '') + data).slice(-MAX_OUTPUT_CHARS))
-      terms.current.get(id)?.write(data)
+      terms.current.get(id)?.write(data, () => {
+        if (stickToBottomRef.current) {
+          requestAnimationFrame(() => {
+            if (stickToBottomRef.current) scrollBodyToBottom()
+          })
+        }
+      })
     })
     const offExit = api.onTerminalExit(({ id, code }) => {
       setProcesses(prev => prev.map(p =>
@@ -149,7 +189,27 @@ const TerminalPanel: React.FC<{ visible: boolean; height: number }> = ({ visible
       offExit()
       window.removeEventListener('terminal-spawned', handleSpawned)
     }
-  }, [])
+  }, [scrollBodyToBottom])
+
+  useEffect(() => {
+    const grew = processes.length > processCountRef.current
+    processCountRef.current = processes.length
+    if (grew) stickToBottomRef.current = true
+    if (stickToBottomRef.current) {
+      requestAnimationFrame(() => {
+        if (stickToBottomRef.current) scrollBodyToBottom()
+      })
+    }
+  }, [processes, scrollBodyToBottom])
+
+  useEffect(() => {
+    if (!visible) return
+    stickToBottomRef.current = true
+    requestAnimationFrame(() => {
+      scrollBodyToBottom()
+      terms.current.forEach(term => term.scrollToBottom())
+    })
+  }, [visible, scrollBodyToBottom])
 
   const runCommand = async () => {
     const command = input.trim()
@@ -227,7 +287,7 @@ const TerminalPanel: React.FC<{ visible: boolean; height: number }> = ({ visible
         </button>
       </div>
 
-      <div className="terminal-body">
+      <div className="terminal-body" ref={bodyRef} onScroll={handleBodyScroll}>
         {processes.length === 0 && (
           <p className="terminal-hint">
             {cwd
@@ -242,6 +302,7 @@ const TerminalPanel: React.FC<{ visible: boolean; height: number }> = ({ visible
             onKill={handleKill}
             getBuffer={getBuffer}
             registerTerm={registerTerm}
+            visible={visible}
           />
         ))}
       </div>

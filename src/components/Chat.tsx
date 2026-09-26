@@ -6,6 +6,7 @@ import { chatHistoryService } from '../services/chatHistoryService'
 import FileEditApproval, { FileEdit } from './FileEditApproval'
 import CommandApproval from './CommandApproval'
 import { i18nService, useT } from '../services/i18nService'
+import { hostOpenCommand } from '../services/agentPrompt'
 import './Chat.css'
 
 interface Message {
@@ -151,6 +152,20 @@ function cleanPathArg(arg: string): string {
   )
 }
 
+function cleanRunCommandArg(command: string): string {
+  const openerMatch = command.match(/^\s*(?:cmd(?:\.exe)?\s+\/c\s+)?(start|xdg-open|open)\s+(.*)$/i)
+  if (!openerMatch) return command
+
+  let rest = openerMatch[2].trim()
+  rest = rest.replace(/^(?:(?:cmd(?:\.exe)?\s+\/c\s+)?(?:start|xdg-open|open)\s+)+/i, '')
+  rest = rest.replace(/^""\s*/, '')
+
+  const targetMatch = rest.match(/^(?:"[^"\n]+"|'[^'\n]+'|(?:https?|file):\/\/[^\s"'<>\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+|[^\s"'<>\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]+\.[A-Za-z0-9]{1,10})/iu)
+  if (!targetMatch) return command
+
+  return `${hostOpenCommand()} ${targetMatch[0]}`
+}
+
 // Find file commands embedded in the AI response
 function findFileCommands(response: string): FileCommand[] {
   const commands: FileCommand[] = []
@@ -195,7 +210,7 @@ function findFileCommands(response: string): FileCommand[] {
 
   const runCommandRegex = /\/\/ RUN_COMMAND[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
   while ((match = runCommandRegex.exec(response)) !== null) {
-    commands.push({ type: 'run', arg: match[1].trim(), start: match.index, end: match.index + match[0].length })
+    commands.push({ type: 'run', arg: cleanRunCommandArg(match[1].trim()), start: match.index, end: match.index + match[0].length })
   }
 
   const grepRegex = /\/\/ GREP[ \t]*:?[ \t]*([^\n]+?)(?=[ \t]*\/\/|\n|$)/g
@@ -685,7 +700,8 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   const approvalResolverRef = useRef<((edits: FileEdit[] | null) => void) | null>(null)
   const [pendingCommands, setPendingCommands] = useState<string[] | null>(null)
   const commandResolverRef = useRef<((commands: string[] | null) => void) | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const stickToBottomRef = useRef(true)
   // Live streaming bubble (separate from the committed message list)
   const [streamingText, setStreamingText] = useState<string | null>(null)
   const streamedRef = useRef('')
@@ -764,6 +780,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
     resolveCommandApproval(null)
     streamedRef.current = ''
     setStreamingText(null)
+    stickToBottomRef.current = true
     setMessages([])
     if (projectPath) chatHistoryService.clearConversation(projectPath)
   }
@@ -870,12 +887,23 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   }
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    const container = messagesContainerRef.current
+    if (container) container.scrollTop = container.scrollHeight
+  }
+
+  const handleMessagesScroll = () => {
+    const container = messagesContainerRef.current
+    if (!container) return
+    stickToBottomRef.current = container.scrollHeight - container.scrollTop - container.clientHeight < 40
   }
 
   useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+    if (!stickToBottomRef.current) return
+    const frame = requestAnimationFrame(() => {
+      if (stickToBottomRef.current) scrollToBottom()
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [messages, streamingText, isLoading])
 
   // Persist conversation whenever it changes
   useEffect(() => {
@@ -919,6 +947,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
       timestamp: Date.now(),
     }
 
+    stickToBottomRef.current = true
     setMessages((prev) => [...prev, userMessage])
     setInput('')
     await sendToAI(userMessage, messages)
@@ -939,6 +968,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
 
     const retryMessage = messages[lastUserIndex]
     const base = messages.slice(0, lastUserIndex)
+    stickToBottomRef.current = true
     setMessages([...base, retryMessage])
     await sendToAI(retryMessage, base)
   }
@@ -1171,7 +1201,7 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
           </button>
         </div>
       </div>
-      <div className="chat-messages">
+      <div className="chat-messages" ref={messagesContainerRef} onScroll={handleMessagesScroll}>
         {messages.length === 0 && (
           <div className="chat-welcome">
             <h4>{t('Welcome to AI Chat')}</h4>
@@ -1233,7 +1263,6 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} />
       </div>
       <div className="chat-input">
         <textarea

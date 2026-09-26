@@ -51,8 +51,11 @@ Author: Eiji Arai — Web Site: https://cuculhart.com
 
 - **Source Control Panel**: Branch display, ahead/behind counts, changed-file list with status badges
 - **Stage & Commit**: Select files via checkboxes or commit all changes at once
-- **Push / Pull**: From the toolbar
+- **Push / Pull**: From the toolbar; a first push can set upstream automatically when the target remote is unambiguous
+- **Clone**: Enter a repository URL from the Open Project dialog, or clone into an empty open project folder
+- **Remote Setup**: Add or update remotes, create the initial commit when needed, then push a branch with upstream tracking
 - **Repo Init**: Run `git init` on a non-Git folder
+- **Git Config**: Set `user.name` and `user.email` globally or per repository
 
 ### Terminal
 
@@ -269,9 +272,11 @@ Results are fed back to the AI, which works autonomously over multiple steps and
 ### Git Operations
 
 1. Open the "Git" tab in the sidebar
-2. Review changed files (click a file name to see the diff)
-3. Enter a commit message and Commit (checked files only, or all changes)
-4. Use ↑/↓ buttons to Push/Pull
+2. Clone a repository from File > Clone Repository / the Open Project dialog, or for a new empty project choose Clone / Initialize Git
+3. Use ⇄ to add/update a remote. If the repository has no commits yet, use Initial Commit, then push the current branch with upstream tracking; use ⚙ for `user.name` / `user.email`
+4. Review changed files (click a file name to see the diff)
+5. Enter a commit message and Commit (checked files only, or all changes)
+6. Use ↑/↓ buttons to Push/Pull; Push sets upstream automatically when the remote is unambiguous
 
 ## Development
 

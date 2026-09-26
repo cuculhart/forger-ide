@@ -18,6 +18,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   gitCommit: (repoPath, message) => ipcRenderer.invoke('git-commit', repoPath, message),
   gitPush: (repoPath) => ipcRenderer.invoke('git-push', repoPath),
   gitPull: (repoPath) => ipcRenderer.invoke('git-pull', repoPath),
+  gitClone: (repoUrl, targetPath) => ipcRenderer.invoke('git-clone', repoUrl, targetPath),
+  gitGetRemotes: (repoPath) => ipcRenderer.invoke('git-remotes', repoPath),
+  gitSetRemote: (repoPath, name, repoUrl) => ipcRenderer.invoke('git-set-remote', repoPath, name, repoUrl),
+  gitPushUpstream: (repoPath, remote, branch) => ipcRenderer.invoke('git-push-upstream', repoPath, remote, branch),
+  gitGetConfig: (repoPath, scope) => ipcRenderer.invoke('git-config-get', repoPath, scope),
+  gitSetConfig: (repoPath, scope, values) => ipcRenderer.invoke('git-config-set', repoPath, scope, values),
   gitFileAtHead: (repoPath, filePath) => ipcRenderer.invoke('git-file-at-head', repoPath, filePath),
   gitDiff: (repoPath) => ipcRenderer.invoke('git-diff', repoPath),
   

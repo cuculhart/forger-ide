@@ -90,7 +90,7 @@ function App() {
   }, [])
   const [sidebarWidth, setSidebarWidth] = useState(250)
   const [chatWidth, setChatWidth] = useState(400)
-  const [terminalHeight, setTerminalHeight] = useState(220)
+  const [terminalHeight, setTerminalHeight] = useState(280)
   const [diffView, setDiffView] = useState<{ filePath: string; original: string; modified: string } | null>(null)
   const [showTerminal, setShowTerminal] = useState(false)
   const t = useT()
@@ -215,6 +215,15 @@ function App() {
     window.addEventListener('terminal-spawned', handleSpawned)
     return () => window.removeEventListener('terminal-spawned', handleSpawned)
   }, [])
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.dispatchEvent(new CustomEvent('forger:layout-changed'))
+      })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [showTerminal, terminalHeight])
 
   // Ctrl+P opens the quick-open file switcher (menu accelerator covers it
   // too, but this keeps it working when the menu bar is hidden)

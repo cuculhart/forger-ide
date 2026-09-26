@@ -81,6 +81,12 @@ const CodeEditor: React.FC<EditorProps> = ({ file, content, onChange, diff, onCl
   }, [])
 
   useEffect(() => {
+    const relayout = () => editorRef.current?.layout()
+    window.addEventListener('forger:layout-changed', relayout)
+    return () => window.removeEventListener('forger:layout-changed', relayout)
+  }, [])
+
+  useEffect(() => {
     const handleThemeChanged = (event: Event) => {
       setMonacoTheme((event as CustomEvent<ResolvedTheme>).detail)
     }
@@ -122,6 +128,7 @@ const CodeEditor: React.FC<EditorProps> = ({ file, content, onChange, diff, onCl
             language={getLanguage(diff.filePath)}
             original={diff.original}
             modified={diff.modified}
+            onMount={(editor) => { editorRef.current = editor }}
             theme={monacoThemeName}
             options={{ ...editorOptions, renderSideBySide: true, readOnly: true }}
           />
