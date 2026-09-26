@@ -5,6 +5,43 @@ All notable changes to Forger are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.5.0] - 2026-09-26
+
+### Added
+
+- **Organization (managed) mode** for centrally managed deployments: enabling
+  "Require organization sign-in" in Settings locks the app behind a sign-in
+  gate until the user authenticates against the organization server. The
+  server issues a per-user virtual API key that talks to an LLM proxy
+  (e.g. LiteLLM), so real provider keys never leave the server. "Continue
+  without an organization" switches back to local/personal use at any time.
+- Organization-controlled model selection: the sign-in response carries the
+  list of models the issued key may use; the Organization section shows a
+  restricted model dropdown and the personal Model Selection is locked while
+  a managed session is active.
+- Budget indicator in the chat header: the remaining allotted budget is shown
+  as a percentage (e.g. `99.9%`) - never a currency amount - next to the
+  model badge while signed in to an organization. It warns below 20% and
+  turns red at 0%, refreshes after each response and every 60 seconds, and
+  its tooltip shows the reset date.
+- Managed-mode error messages: a spent personal budget, an exhausted
+  organization-wide provider quota, a rate limit, and a model that is not
+  permitted by the organization each produce a clear localized message
+  instead of raw proxy/provider errors.
+
+### Changed
+
+- In managed mode the provider/model fallback is disabled: the organization
+  controls the model list and the fallback no longer rewrites the personal
+  model setting.
+
+### Fixed
+
+- Clearing the API key in Settings now notifies the chat immediately, so the
+  configured/unconfigured state updates without a restart.
+
 ## [0.4.0] - 2026-09-26
 
 ### Added

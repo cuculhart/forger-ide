@@ -24,7 +24,7 @@ const About: React.FC<AboutProps> = ({ onClose }) => {
         <div className="settings-content about-content">
           <img src={iconUrl} className="about-icon" alt="Forger" />
           <h3 className="about-app-name">Forger</h3>
-          <p className="about-version">Version 0.2.0</p>
+          <p className="about-version">Version 0.5.0</p>
           <p className="about-tagline">
             {t('Standalone, Privacy-First AI IDE')}
           </p>

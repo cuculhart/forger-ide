@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai'
 import { configService } from './configService'
+import { i18nService } from './i18nService'
 import { APP_CONTEXT_PROMPT, AGENT_INSTRUCTIONS, NO_PROJECT_INSTRUCTIONS, hostOsName, hostOpenCommand } from './agentPrompt'
 import { projectService } from './projectService'
 
@@ -16,6 +17,10 @@ export class GeminiService {
 
   private getModelName(override?: string): string {
     if (override) return override
+    // An organization-issued session restricts the model list server-side
+    const managed = configService.getManagedCredentials()
+    if (managed?.model) return managed.model
+    if (managed?.models?.length) return managed.models[0]
     const model = configService.getGeminiModel()
     if (model === 'custom') {
       const customModel = configService.getGeminiCustomModel()
@@ -25,8 +30,10 @@ export class GeminiService {
   }
 
   private initialize(modelOverride?: string) {
-    const apiKey = configService.getGeminiApiKey()
-    const proxyUrl = configService.getLlmProxyUrl()
+    // A valid organization session takes precedence over the personal key
+    const managed = configService.getManagedCredentials()
+    const apiKey = managed?.apiKey || configService.getGeminiApiKey()
+    const proxyUrl = managed?.proxyUrl || configService.getLlmProxyUrl()
     
     if (apiKey) {
       this.genAI = new GoogleGenerativeAI(apiKey)
@@ -117,6 +124,28 @@ export class GeminiService {
     return this.model
   }
 
+  // Translate LiteLLM/proxy errors into user-facing text under an
+  // organization session. Returns null to keep the original message.
+  private describeManagedError(errorMessage: string): string | null {
+    if (!configService.getManagedCredentials()) return null
+    const m = errorMessage.toLowerCase()
+    if (m.includes('budget')) {
+      return i18nService.t('Your allotted usage budget has been fully used. It will reset automatically, or contact your administrator.')
+    }
+    // Upstream provider quota/billing cap (e.g. Google AI Studio monthly
+    // spend limit) - this is the whole organization, not the user's slice.
+    if (m.includes('resource_exhausted') || m.includes('quota') || m.includes('exhausted') || m.includes('billing')) {
+      return i18nService.t('The organization usage cap has been reached. It resets at the start of the next billing period, or contact your administrator.')
+    }
+    if (m.includes('rate limit') || m.includes('rate_limit') || m.includes('429')) {
+      return i18nService.t('Your allotted usage limit has been reached. Please wait a moment and try again.')
+    }
+    if (m.includes('not allowed') || m.includes('does not have access') || m.includes('forbidden')) {
+      return i18nService.t('This model is not permitted by your organization. Check the model selection in Settings.')
+    }
+    return null
+  }
+
   private withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     return Promise.race([
       promise,
@@ -158,7 +187,7 @@ export class GeminiService {
   }
 
   public isConfigured(): boolean {
-    return !!localStorage.getItem('gemini_api_key')
+    return !!localStorage.getItem('gemini_api_key') || !!configService.getManagedCredentials()
   }
 
   public async sendMessageWithTools(message: string, context?: string): Promise<{ response: string; toolCalls: any[] }> {
@@ -289,6 +318,8 @@ export class GeminiService {
     } catch (error) {
       console.error('Gemini API error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+      const managedError = this.describeManagedError(errorMessage)
+      if (managedError) throw new Error(managedError)
       throw new Error(`Failed to get response from Gemini: ${errorMessage}`)
     }
   }
@@ -348,14 +379,18 @@ export class GeminiService {
     } catch (error) {
       console.error('Gemini API error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      
+      const managedError = this.describeManagedError(errorMessage)
+      if (managedError) throw new Error(managedError)
+
       // Check if it's a timeout error
       if (errorMessage.includes('timeout')) {
         throw new Error('Request timed out. The AI response took too long. Try with a simpler prompt or check your internet connection.')
       }
-      
-      // Check if it's a model not found error and try fallback
-      if (errorMessage.includes('not found') || errorMessage.includes('is not supported')) {
+
+      // Check if it's a model not found error and try fallback.
+      // Skipped in managed mode: the organization controls the model list,
+      // and the fallback must not rewrite the personal model setting.
+      if (!configService.getManagedCredentials() && (errorMessage.includes('not found') || errorMessage.includes('is not supported'))) {
         const currentModel = this.getModelName()
         console.log(`Model '${currentModel}' not available, trying fallback...`)
         localStorage.setItem('gemini_model', 'gemini-1.5-flash') // Try fallback
@@ -440,14 +475,18 @@ export class GeminiService {
     } catch (error) {
       console.error('Gemini API error:', error)
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
-      
+      const managedError = this.describeManagedError(errorMessage)
+      if (managedError) throw new Error(managedError)
+
       // Check if it's a timeout error
       if (errorMessage.includes('timeout')) {
         throw new Error('Request timed out. The AI response took too long. Try with a simpler prompt or check your internet connection.')
       }
-      
-      // Check if it's a model not found error and try fallback
-      if (errorMessage.includes('not found') || errorMessage.includes('is not supported')) {
+
+      // Check if it's a model not found error and try fallback.
+      // Skipped in managed mode: the organization controls the model list,
+      // and the fallback must not rewrite the personal model setting.
+      if (!configService.getManagedCredentials() && (errorMessage.includes('not found') || errorMessage.includes('is not supported'))) {
         const currentModel = this.getModelName()
         console.log(`Model '${currentModel}' not available for streaming, trying fallback...`)
         localStorage.setItem('gemini_model', 'gemini-1.5-flash') // Try fallback

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react'
 import { llmService } from '../services/llmService'
 import { configService } from '../services/configService'
+import { managedService } from '../services/managedService'
 import { projectService } from '../services/projectService'
 import { chatHistoryService } from '../services/chatHistoryService'
 import FileEditApproval, { FileEdit } from './FileEditApproval'
@@ -693,6 +694,8 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
   const [isLoading, setIsLoading] = useState(false)
   const [isConfigured, setIsConfigured] = useState(false)
   const [currentModel, setCurrentModel] = useState<string>('')
+  // Organization session: remaining budget from the management server
+  const [managedUsage, setManagedUsage] = useState<{ spend: number; maxBudget: number | null; resetAt?: string } | null>(null)
   // Model pinned to the in-flight request (shown while generating)
   const [activeModel, setActiveModel] = useState<string>('')
   const [abortController, setAbortController] = useState<AbortController | null>(null)
@@ -920,6 +923,11 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
         setCurrentModel(`ollama:${configService.getOllamaModel()}`)
         return
       }
+      const managedModel = configService.getManagedCredentials()?.model
+      if (managedModel) {
+        setCurrentModel(managedModel)
+        return
+      }
       const savedModel = configService.getGeminiModel()
       if (savedModel === 'custom') {
         setCurrentModel(configService.getGeminiCustomModel() || 'Custom')
@@ -932,6 +940,33 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
     window.addEventListener('forger:llm-changed', refreshLlm)
     return () => window.removeEventListener('forger:llm-changed', refreshLlm)
   }, [])
+
+  // Organization session: poll the remaining budget once a minute and
+  // re-check on session changes
+  useEffect(() => {
+    let cancelled = false
+    const refreshUsage = async () => {
+      const usage = await managedService.getUsage()
+      if (!cancelled) setManagedUsage(usage)
+    }
+    refreshUsage()
+    const interval = setInterval(refreshUsage, 60000)
+    window.addEventListener('forger:managed-changed', refreshUsage)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+      window.removeEventListener('forger:managed-changed', refreshUsage)
+    }
+  }, [])
+
+  // Each completed reply may have consumed budget - refresh then too
+  const wasLoadingRef = useRef(false)
+  useEffect(() => {
+    if (wasLoadingRef.current && !isLoading) {
+      managedService.getUsage().then(setManagedUsage)
+    }
+    wasLoadingRef.current = isLoading
+  }, [isLoading])
 
   const handleSend = async () => {
     if (!input.trim()) return
@@ -1156,6 +1191,12 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
     }
   }
 
+  // Show remaining budget as a percentage only - never expose the
+  // dollar amount, which would reveal the organization's actual cap.
+  const budgetPct = managedUsage?.maxBudget != null && managedUsage.maxBudget > 0
+    ? Math.max(0, (managedUsage.maxBudget - managedUsage.spend) / managedUsage.maxBudget * 100)
+    : null
+
   return (
     <div className="chat">
       <div className="chat-header">
@@ -1164,6 +1205,14 @@ const Chat: React.FC<ChatProps> = ({ onOpenSettings }) => {
           {currentModel && (
             <span className="model-badge" title={`Current model: ${currentModel}`}>
               {currentModel}
+            </span>
+          )}
+          {budgetPct != null && (
+            <span
+              className={`budget-badge ${budgetPct <= 0 ? 'exhausted' : budgetPct < 20 ? 'low' : ''}`}
+              title={`${t('Allotted budget remaining')}: ${budgetPct.toFixed(1)}%${managedUsage?.resetAt ? ` · ${t('Resets')}: ${managedUsage.resetAt}` : ''}`}
+            >
+              {t('Budget')} {budgetPct.toFixed(1)}%
             </span>
           )}
         </div>

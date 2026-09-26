@@ -4,6 +4,7 @@ import { ollamaService } from '../services/ollamaService'
 import { i18nService, useT } from '../services/i18nService'
 import { themeService } from '../services/themeService'
 import { chatHistoryService } from '../services/chatHistoryService'
+import { managedService } from '../services/managedService'
 import './Settings.css'
 
 interface SettingsProps {
@@ -64,6 +65,11 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
     { code: 'en', label: 'English' },
   ])
   const [language, setLanguage] = useState('en')
+  const [managedMode, setManagedMode] = useState(false)
+  const [managedServerUrl, setManagedServerUrl] = useState('')
+  const [managedUser, setManagedUser] = useState<string | undefined>(undefined)
+  const [managedModels, setManagedModels] = useState<string[]>([])
+  const [managedModel, setManagedModel] = useState('')
   const t = useT()
 
   useEffect(() => {
@@ -101,6 +107,14 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
           refreshOllamaModels()
         }
         setLanguage(configService.getLanguage())
+        setManagedMode(configService.getManagedMode())
+        setManagedServerUrl(configService.getManagedServerUrl())
+        const creds = configService.getManagedCredentials()
+        if (creds) {
+          setManagedUser(configService.getManagedUser())
+          setManagedModels(creds.models || [])
+          setManagedModel(creds.model || '')
+        }
         window.electronAPI.listLanguages().then((res) => {
           if (res.success && res.languages) setLanguages(res.languages)
         })
@@ -131,6 +145,8 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
     configService.clear()
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    window.dispatchEvent(new Event('forger:llm-changed'))
+    onApiKeySaved?.()
   }
 
   const handleModelChange = (modelId: string) => {
@@ -217,6 +233,32 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
     window.dispatchEvent(new Event('forger:recents-cleared'))
     setHistoryCleared(true)
     setTimeout(() => setHistoryCleared(false), 2000)
+  }
+
+  // Organization sign-in applies immediately: enabling it locks the app
+  // behind the sign-in gate until the server issues credentials.
+  const handleManagedServerUrlChange = (value: string) => {
+    setManagedServerUrl(value)
+    configService.setManagedServerUrl(value.trim())
+  }
+
+  const handleManagedModeChange = (on: boolean) => {
+    setManagedMode(on)
+    configService.setManagedMode(on)
+    window.dispatchEvent(new Event('forger:managed-changed'))
+  }
+
+  const handleManagedSignOut = () => {
+    managedService.logout()
+    setManagedUser(undefined)
+    setManagedModels([])
+    setManagedModel('')
+  }
+
+  const handleManagedModelChange = (value: string) => {
+    setManagedModel(value)
+    configService.setManagedModel(value)
+    notifyLlmChanged()
   }
 
   const handleClearChatHistory = () => {
@@ -437,12 +479,18 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
             <p className="setting-description">
               {t('Select the Gemini model to use for AI chat. Different models have different capabilities and pricing.')}
             </p>
-            
+            {managedMode && managedUser && (
+              <p className="setting-description">
+                {t('Ignored while signed in to an organization - the organization decides the available models.')}
+              </p>
+            )}
+
             <div className="model-selection">
               <select
                 value={selectedModel}
                 onChange={(e) => handleModelChange(e.target.value)}
                 className="model-dropdown"
+                disabled={managedMode && !!managedUser}
               >
                 {AVAILABLE_MODELS.map(model => (
                   <option key={model.id} value={model.id}>
@@ -498,6 +546,69 @@ const Settings: React.FC<SettingsProps> = ({ onClose, onApiKeySaved }) => {
           
           </>
           )}
+
+          <div className="setting-section">
+            <h3>{t('Organization')}</h3>
+            <p className="setting-description">
+              {t('Sign in with an account issued by your organization. While enabled, the app requires sign-in and sends AI requests through the organization server. Managed sign-in takes precedence over the personal API key above.')}
+            </p>
+
+            <div className="appearance-row">
+              <label htmlFor="managed-server-url">{t('Server URL')}</label>
+              <input
+                id="managed-server-url"
+                type="text"
+                value={managedServerUrl}
+                onChange={(e) => handleManagedServerUrlChange(e.target.value)}
+                placeholder="https://llm.example.org"
+                className="proxy-url-field"
+              />
+            </div>
+
+            <div className="proxy-toggle">
+              <label className="toggle-label">
+                <input
+                  type="checkbox"
+                  checked={managedMode}
+                  disabled={!managedMode && !managedServerUrl.trim()}
+                  onChange={(e) => handleManagedModeChange(e.target.checked)}
+                />
+                <span>{t('Require organization sign-in')}</span>
+              </label>
+            </div>
+
+            {managedMode && (
+              <p className="setting-description">
+                {managedUser
+                  ? `${t('Signed in as')} ${managedUser}`
+                  : t('Not signed in - the app will ask for sign-in on the next screen.')}
+                {managedUser && (
+                  <>
+                    {' '}
+                    <button className="clear-button" onClick={handleManagedSignOut}>
+                      {t('Sign Out')}
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+
+            {managedMode && managedUser && managedModels.length > 0 && (
+              <div className="appearance-row">
+                <label htmlFor="managed-model-select">{t('Model')}</label>
+                <select
+                  id="managed-model-select"
+                  value={managedModel}
+                  onChange={(e) => handleManagedModelChange(e.target.value)}
+                  className="model-dropdown"
+                >
+                  {managedModels.map(m => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
 
           <div className="setting-section">
             <h3>{t('History')}</h3>

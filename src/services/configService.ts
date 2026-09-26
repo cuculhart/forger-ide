@@ -17,6 +17,17 @@ export type ContextMode = 'tree' | 'full'
 // 'gemini' = Google Gemini API (or LiteLLM proxy). 'ollama' = local Ollama.
 export type LlmProvider = 'gemini' | 'ollama'
 
+// Credentials issued by an organization's management server, stored
+// separately from the personal Gemini key so signing out never destroys it.
+export interface ManagedSession {
+  apiKey: string
+  proxyUrl: string
+  user?: string
+  model?: string    // server-pinned model, or the user's selection
+  models?: string[] // model ids the key is allowed to use
+  expiresAt?: number // epoch ms; absent = never expires client-side
+}
+
 class ConfigService {
   private config: Map<string, string> = new Map()
 
@@ -39,6 +50,14 @@ class ConfigService {
     const ollamaBaseUrl = localStorage.getItem('ollama_base_url')
     const ollamaModel = localStorage.getItem('ollama_model')
     const language = localStorage.getItem('language')
+    const managedMode = localStorage.getItem('managed_mode')
+    const managedServerUrl = localStorage.getItem('managed_server_url')
+    const managedApiKey = localStorage.getItem('managed_api_key')
+    const managedProxyUrl = localStorage.getItem('managed_proxy_url')
+    const managedUser = localStorage.getItem('managed_user')
+    const managedModel = localStorage.getItem('managed_model')
+    const managedModels = localStorage.getItem('managed_models')
+    const managedExpiry = localStorage.getItem('managed_expiry')
 
     if (apiKey) this.config.set('GEMINI_API_KEY', apiKey)
     if (model) this.config.set('GEMINI_MODEL', model)
@@ -53,6 +72,14 @@ class ConfigService {
     if (ollamaBaseUrl) this.config.set('OLLAMA_BASE_URL', ollamaBaseUrl)
     if (ollamaModel) this.config.set('OLLAMA_MODEL', ollamaModel)
     if (language) this.config.set('LANGUAGE', language)
+    if (managedMode) this.config.set('MANAGED_MODE', managedMode)
+    if (managedServerUrl) this.config.set('MANAGED_SERVER_URL', managedServerUrl)
+    if (managedApiKey) this.config.set('MANAGED_API_KEY', managedApiKey)
+    if (managedProxyUrl) this.config.set('MANAGED_PROXY_URL', managedProxyUrl)
+    if (managedUser) this.config.set('MANAGED_USER', managedUser)
+    if (managedModel) this.config.set('MANAGED_MODEL', managedModel)
+    if (managedModels) this.config.set('MANAGED_MODELS', managedModels)
+    if (managedExpiry) this.config.set('MANAGED_EXPIRY', managedExpiry)
   }
 
   get(key: string): string | undefined {
@@ -89,7 +116,28 @@ class ConfigService {
       localStorage.setItem('ollama_model', value)
     } else if (key === 'LANGUAGE') {
       localStorage.setItem('language', value)
+    } else if (key === 'MANAGED_MODE') {
+      localStorage.setItem('managed_mode', value)
+    } else if (key === 'MANAGED_SERVER_URL') {
+      localStorage.setItem('managed_server_url', value)
+    } else if (key === 'MANAGED_API_KEY') {
+      localStorage.setItem('managed_api_key', value)
+    } else if (key === 'MANAGED_PROXY_URL') {
+      localStorage.setItem('managed_proxy_url', value)
+    } else if (key === 'MANAGED_USER') {
+      localStorage.setItem('managed_user', value)
+    } else if (key === 'MANAGED_MODEL') {
+      localStorage.setItem('managed_model', value)
+    } else if (key === 'MANAGED_MODELS') {
+      localStorage.setItem('managed_models', value)
+    } else if (key === 'MANAGED_EXPIRY') {
+      localStorage.setItem('managed_expiry', value)
     }
+  }
+
+  private remove(key: string, storageKey: string): void {
+    this.config.delete(key)
+    localStorage.removeItem(storageKey)
   }
 
   getGeminiApiKey(): string | undefined {
@@ -229,6 +277,117 @@ class ConfigService {
 
   setContextMaxFiles(maxFiles: number): void {
     this.set('CONTEXT_MAX_FILES', String(maxFiles))
+  }
+
+  // --- Organization (managed) mode ---
+  // When enabled, the app shows a sign-in gate until credentials issued by
+  // the organization's server are stored. The managed key is kept separate
+  // from the personal Gemini key, so signing out leaves personal config
+  // untouched and disabling managed mode instantly restores local use.
+
+  getManagedMode(): boolean {
+    return this.get('MANAGED_MODE') === '1'
+  }
+
+  setManagedMode(on: boolean): void {
+    this.set('MANAGED_MODE', on ? '1' : '0')
+  }
+
+  getManagedServerUrl(): string {
+    return this.get('MANAGED_SERVER_URL') || ''
+  }
+
+  setManagedServerUrl(url: string): void {
+    this.set('MANAGED_SERVER_URL', url)
+  }
+
+  getManagedUser(): string | undefined {
+    return this.get('MANAGED_USER')
+  }
+
+  getManagedSessionExpiry(): number | undefined {
+    const value = parseInt(this.get('MANAGED_EXPIRY') || '', 10)
+    return Number.isFinite(value) && value > 0 ? value : undefined
+  }
+
+  setManagedSession(session: ManagedSession): void {
+    this.set('MANAGED_API_KEY', session.apiKey)
+    this.set('MANAGED_PROXY_URL', session.proxyUrl)
+    if (session.user) {
+      this.set('MANAGED_USER', session.user)
+    } else {
+      this.remove('MANAGED_USER', 'managed_user')
+    }
+    if (session.model) {
+      this.set('MANAGED_MODEL', session.model)
+    }
+    if (session.models && session.models.length > 0) {
+      this.set('MANAGED_MODELS', JSON.stringify(session.models))
+      // Keep an existing selection if still allowed, else fall back
+      // to the first allowed model.
+      const current = this.get('MANAGED_MODEL')
+      if (!current || !session.models.includes(current)) {
+        this.set('MANAGED_MODEL', session.models[0])
+      }
+    } else {
+      this.remove('MANAGED_MODELS', 'managed_models')
+      if (!session.model) {
+        this.remove('MANAGED_MODEL', 'managed_model')
+      }
+    }
+    if (session.expiresAt) {
+      this.set('MANAGED_EXPIRY', String(session.expiresAt))
+    } else {
+      this.remove('MANAGED_EXPIRY', 'managed_expiry')
+    }
+  }
+
+  // Drops the issued key and session metadata. Server URL and the on/off
+  // flag are kept, so re-enabling or re-signing-in is one step.
+  clearManagedSession(): void {
+    this.remove('MANAGED_API_KEY', 'managed_api_key')
+    this.remove('MANAGED_PROXY_URL', 'managed_proxy_url')
+    this.remove('MANAGED_USER', 'managed_user')
+    this.remove('MANAGED_MODEL', 'managed_model')
+    this.remove('MANAGED_MODELS', 'managed_models')
+    this.remove('MANAGED_EXPIRY', 'managed_expiry')
+  }
+
+  // Model ids this session's key may use (empty = unrestricted/unknown)
+  getManagedModels(): string[] {
+    try {
+      const raw = this.get('MANAGED_MODELS')
+      const list = raw ? JSON.parse(raw) : []
+      return Array.isArray(list) ? list.filter(m => typeof m === 'string') : []
+    } catch {
+      return []
+    }
+  }
+
+  // Select among the organization-allowed models
+  setManagedModel(model: string): void {
+    this.set('MANAGED_MODEL', model)
+  }
+
+  // Active managed credentials, or undefined when there is no session or
+  // it has expired. Only meaningful while managed mode is enabled.
+  getManagedCredentials(): { apiKey: string; proxyUrl: string; model?: string; models?: string[] } | undefined {
+    if (!this.getManagedMode()) return undefined
+    const apiKey = this.get('MANAGED_API_KEY')
+    if (!apiKey) return undefined
+    const expiry = this.getManagedSessionExpiry()
+    if (expiry && expiry <= Date.now()) return undefined
+    return {
+      apiKey,
+      proxyUrl: this.get('MANAGED_PROXY_URL') || '',
+      model: this.get('MANAGED_MODEL'),
+      models: this.getManagedModels(),
+    }
+  }
+
+  // Managed mode on + no valid session = show the sign-in gate.
+  isManagedLocked(): boolean {
+    return this.getManagedMode() && !this.getManagedCredentials()
   }
 
   // Clears the Recent Projects list shown in the Explorer

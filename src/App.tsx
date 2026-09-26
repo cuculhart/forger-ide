@@ -4,6 +4,7 @@ import Editor from './components/Editor'
 import Chat from './components/Chat'
 import Settings from './components/Settings'
 import About from './components/About'
+import ManagedGate from './components/ManagedGate'
 import GitPanel from './components/GitPanel'
 import TerminalPanel from './components/TerminalPanel'
 import QuickOpen from './components/QuickOpen'
@@ -51,7 +52,25 @@ function App() {
   const [sidebarTab, setSidebarTab] = useState<'explorer' | 'git' | 'search'>('explorer')
   const [showQuickOpen, setShowQuickOpen] = useState(false)
   const [gotoLine, setGotoLine] = useState<{ line: number; n: number } | null>(null)
+  const [managedLocked, setManagedLocked] = useState(configService.isManagedLocked())
   const fileHistoryRef = useRef<string[]>([]) // absolute paths, most recent first
+  const managedLockedRef = useRef(managedLocked)
+  managedLockedRef.current = managedLocked
+
+  // Managed mode: re-evaluate the lock when the session changes or expires
+  useEffect(() => {
+    const refresh = () => setManagedLocked(configService.isManagedLocked())
+    window.addEventListener('forger:managed-changed', refresh)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const expiry = configService.getManagedSessionExpiry()
+    if (configService.getManagedMode() && expiry) {
+      timer = setTimeout(refresh, Math.max(0, expiry - Date.now()))
+    }
+    return () => {
+      window.removeEventListener('forger:managed-changed', refresh)
+      if (timer) clearTimeout(timer)
+    }
+  }, [managedLocked])
 
   // Load the saved UI language once at startup
   useEffect(() => {
@@ -175,6 +194,9 @@ function App() {
     if (!api?.onMenuAction) return
 
     const unsubscribe = api.onMenuAction((action: string) => {
+      // While the sign-in gate is up, menu accelerators must not reach
+      // the workspace (save/export/open would run against hidden UI).
+      if (managedLockedRef.current) return
       if (action === 'toggle-terminal') {
         setShowTerminal(prev => !prev)
         return
@@ -278,6 +300,12 @@ function App() {
   }
 
   const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
+
+  // Managed mode without a valid session: replace the whole workspace
+  // with the sign-in gate until credentials are issued by the server.
+  if (managedLocked) {
+    return <ManagedGate />
+  }
 
   return (
     <div className="app">
